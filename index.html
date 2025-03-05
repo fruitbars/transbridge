@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TransBridge - 多模型翻译网关</title>
+    <title>TransBridge - 大语言模型翻译网关</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
@@ -79,8 +79,8 @@
 <!-- Hero 部分 (简短版) -->
 <header class="bg-gradient text-white py-10">
     <div class="container mx-auto px-6 text-center">
-        <h1 class="text-3xl md:text-4xl font-bold mb-3">TransBridge 翻译网关</h1>
-        <p class="text-lg md:text-xl mb-5">基于多种 AI 模型的高性能翻译服务</p>
+        <h1 class="text-3xl md:text-4xl font-bold mb-3">TransBridge 大语言模型翻译网关</h1>
+        <p class="text-lg md:text-xl mb-5">基于大语言模型的高性能翻译服务，使用DeepL API接口来调用大模型翻译</p>
     </div>
 </header>
 
@@ -129,7 +129,7 @@
         </div>
 
         <!-- 翻译面板 -->
-        <div class="max-w-5xl mx-auto translation-panel bg-white rounded-b-lg border border-gray-200 demo-container">
+        <div class="max-w-5xl mx-auto translation-panel bg-white rounded-b-lg border border-gray-200 demo-container relative">
             <div class="flex flex-col md:flex-row">
                 <!-- 左侧：原文输入 -->
                 <div class="w-full md:w-1/2 p-4 border-b md:border-b-0 md:border-r border-gray-200 textarea-container">
@@ -140,9 +140,6 @@
                     <div class="absolute bottom-2 left-4 flex space-x-2">
                         <button id="clear-source-btn" class="text-gray-500 hover:text-gray-700 p-1" title="清空文本">
                             <i class="fas fa-times-circle"></i>
-                        </button>
-                        <button id="speak-source-btn" class="text-gray-500 hover:text-gray-700 p-1" title="朗读文本">
-                            <i class="fas fa-volume-up"></i>
                         </button>
                         <button id="copy-source-btn" class="text-gray-500 hover:text-gray-700 p-1" title="复制文本">
                             <i class="far fa-copy"></i>
@@ -156,9 +153,6 @@
 
                     <!-- 译文功能按钮 -->
                     <div class="absolute bottom-2 left-4 flex space-x-2">
-                        <button id="speak-translated-btn" class="text-gray-500 hover:text-gray-700 p-1" title="朗读译文">
-                            <i class="fas fa-volume-up"></i>
-                        </button>
                         <button id="copy-translated-btn" class="text-gray-500 hover:text-gray-700 p-1" title="复制译文">
                             <i class="far fa-copy"></i>
                         </button>
@@ -179,7 +173,12 @@
 
             <!-- 错误信息 -->
             <div id="error-container" class="p-4 hidden">
-                <div id="error-message" class="p-3 bg-red-50 text-red-600 border border-red-200 rounded fade-in"></div>
+                <div id="error-message" class="p-3 bg-red-50 text-red-600 border border-red-200 rounded fade-in text-sm"></div>
+            </div>
+
+            <!-- 调试信息区域 - 可根据需要显示/隐藏 -->
+            <div id="debug-container" class="p-2 border-t border-gray-200 hidden">
+                <div class="text-xs text-gray-500 whitespace-pre-wrap" id="debug-output"></div>
             </div>
 
             <!-- 加载指示器 (更小、更不突兀) -->
@@ -198,8 +197,7 @@
     </div>
 </section>
 
-<!-- 其余部分保持不变 -->
-<!-- 特性部分 -->
+<!-- 主要特性部分 -->
 <section id="features" class="py-16 bg-gray-50">
     <div class="container mx-auto px-6">
         <h2 class="text-3xl font-bold text-center mb-12">主要特性</h2>
@@ -275,6 +273,31 @@
 <!-- 脚本 -->
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // 调试日志函数
+        function debugLog(message) {
+            const debugContainer = document.getElementById('debug-container');
+            const debugOutput = document.getElementById('debug-output');
+
+            if (debugOutput) {
+                const timestamp = new Date().toISOString().substr(11, 8);
+                debugOutput.textContent += `[${timestamp}] ${message}\n`;
+
+                // 自动滚动到底部
+                debugOutput.scrollTop = debugOutput.scrollHeight;
+            }
+
+            // 打印到控制台以便调试
+            console.log(message);
+        }
+
+        // 检测是否为移动设备
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if (isMobile) {
+            debugLog("检测到移动设备");
+        } else {
+            debugLog("检测到桌面设备");
+        }
+
         // 获取DOM元素
         const translateBtn = document.getElementById('translate-btn');
         const sourceText = document.getElementById('source-text');
@@ -287,8 +310,6 @@
         const sourceCount = document.getElementById('source-count');
         const swapLangBtn = document.getElementById('swap-lang-btn');
         const clearSourceBtn = document.getElementById('clear-source-btn');
-        const speakSourceBtn = document.getElementById('speak-source-btn');
-        const speakTranslatedBtn = document.getElementById('speak-translated-btn');
         const copySourceBtn = document.getElementById('copy-source-btn');
         const copyTranslatedBtn = document.getElementById('copy-translated-btn');
         const statusMessage = document.getElementById('status-message');
@@ -337,6 +358,97 @@
             }
         }
 
+        // 使用XMLHttpRequest的传统翻译函数
+        function legacyTranslate(text, sourceLangVal, targetLangVal) {
+            return new Promise((resolve, reject) => {
+                debugLog("使用XMLHttpRequest发送请求");
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', API_URL, true);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.setRequestHeader('Authorization', 'Bearer tr-98584e33-f387-42cc-a467-f02513bd400d');
+                xhr.timeout = 20000; // 20秒超时
+
+                xhr.onload = function() {
+                    debugLog(`收到响应: 状态 ${xhr.status}`);
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            const data = JSON.parse(xhr.responseText);
+                            debugLog("响应解析成功");
+                            resolve(data);
+                        } catch (e) {
+                            debugLog(`解析响应失败: ${e.message}`);
+                            reject(new Error('解析响应失败'));
+                        }
+                    } else {
+                        debugLog(`HTTP错误: ${xhr.status}`);
+                        reject(new Error(`HTTP错误: ${xhr.status}`));
+                    }
+                };
+
+                xhr.onerror = function() {
+                    debugLog("网络请求失败");
+                    reject(new Error('网络请求失败'));
+                };
+
+                xhr.ontimeout = function() {
+                    debugLog("请求超时");
+                    reject(new Error('请求超时'));
+                };
+
+                const requestData = JSON.stringify({
+                    text: text,
+                    source_lang: sourceLangVal === "AUTO" ? "" : sourceLangVal,
+                    target_lang: targetLangVal
+                });
+
+                debugLog(`请求数据: ${requestData}`);
+                xhr.send(requestData);
+            });
+        }
+
+        // 使用fetch API的现代翻译函数
+        async function modernTranslate(text, sourceLangVal, targetLangVal) {
+            debugLog("使用Fetch API发送请求");
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒超时
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer tr-98584e33-f387-42cc-a467-f02513bd400d'
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        source_lang: sourceLangVal === "AUTO" ? "" : sourceLangVal,
+                        target_lang: targetLangVal
+                    }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                debugLog(`收到响应: 状态 ${response.status}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP错误 ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                debugLog("响应解析成功");
+                return data;
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    debugLog("请求超时");
+                    throw new Error('请求超时');
+                }
+                throw error;
+            }
+        }
+
         // 翻译函数
         async function translate(isAuto = false) {
             const text = sourceText.value.trim();
@@ -361,24 +473,15 @@
             const startTime = performance.now();
 
             try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer tr-98584e33-f387-42cc-a467-f02513bd400d'
-                    },
-                    body: JSON.stringify({
-                        text: text,
-                        source_lang: sourceLang.value === "AUTO" ? "" : sourceLang.value,
-                        target_lang: targetLang.value
-                    })
-                });
+                debugLog("开始翻译请求");
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error ${response.status}`);
+                let data;
+                // 根据设备类型选择不同的请求方法
+                if (isMobile) {
+                    data = await legacyTranslate(text, sourceLang.value, targetLang.value);
+                } else {
+                    data = await modernTranslate(text, sourceLang.value, targetLang.value);
                 }
-
-                const data = await response.json();
 
                 // 计算耗时并显示
                 const endTime = performance.now();
@@ -386,9 +489,13 @@
                 document.getElementById('time-value').textContent = timeTaken;
                 document.getElementById('translation-time').classList.remove('hidden');
 
+                debugLog(`响应数据: ${JSON.stringify(data).substring(0, 100)}...`);
+
                 if (data.code === 200 || (data.translations && data.translations.length > 0)) {
                     // 处理新的API响应格式
                     let translatedContent = data.translations ? data.translations[0].text : data.data;
+                    debugLog(`翻译内容获取成功: ${translatedContent.substring(0, 50)}...`);
+
                     translatedText.textContent = translatedContent;
                     // 翻译完成后更新状态
                     statusMessage.textContent = "翻译完成";
@@ -396,10 +503,22 @@
                         statusMessage.textContent = "";
                     }, 2000);
                 } else {
+                    debugLog(`翻译失败: ${data.message || data.data || '未知错误'}`);
                     showError(`翻译失败: ${data.message || data.data || '未知错误'}`);
                 }
             } catch (error) {
-                showError(`请求错误: ${error.message}`);
+                debugLog(`错误: ${error.message}`);
+
+                // 区分不同类型的错误
+                if (error.name === 'AbortError' || error.message.includes('timeout')) {
+                    showError("请求超时，请检查网络连接或稍后再试");
+                } else if (error.message.includes('NetworkError') || error.message.includes('network')) {
+                    showError("网络错误，请检查您的网络连接");
+                } else if (error.message.includes('解析')) {
+                    showError("响应解析失败，服务器返回了无效数据");
+                } else {
+                    showError(`请求错误: ${error.message}`);
+                }
             } finally {
                 loading.classList.add('hidden');
             }
@@ -415,10 +534,18 @@
             errorMessage.textContent = message;
             errorContainer.classList.remove('hidden');
             statusMessage.textContent = "";
+            debugLog(`显示错误: ${message}`);
         }
 
         // 交换语言
         swapLangBtn.addEventListener('click', function() {
+            debugLog("交换语言");
+            // 不交换自动检测
+            if (sourceLang.value === "AUTO") {
+                showError("自动检测语言不能交换");
+                return;
+            }
+
             const sourceVal = sourceLang.value;
             sourceLang.value = targetLang.value;
             targetLang.value = sourceVal;
@@ -434,6 +561,7 @@
 
         // 清空原文
         clearSourceBtn.addEventListener('click', function() {
+            debugLog("清空原文");
             sourceText.value = '';
             translatedText.textContent = '';
             updateCharCount();
@@ -441,71 +569,99 @@
 
         // 复制原文
         copySourceBtn.addEventListener('click', function() {
+            debugLog("复制原文");
             copyText(sourceText.value, copySourceBtn);
         });
 
         // 复制译文
         copyTranslatedBtn.addEventListener('click', function() {
+            debugLog("复制译文");
             copyText(translatedText.textContent, copyTranslatedBtn);
         });
 
         // 通用复制函数
         function copyText(text, button) {
-            navigator.clipboard.writeText(text).then(function() {
-                const originalHTML = button.innerHTML;
-                button.innerHTML = '<i class="fas fa-check"></i>';
-                setTimeout(() => {
-                    button.innerHTML = originalHTML;
-                }, 2000);
-            }).catch(function() {
-                showError('复制失败，请手动复制');
-            });
-        }
-
-        // 朗读文本
-        speakSourceBtn.addEventListener('click', function() {
-            speakText(sourceText.value, getLanguageCodeForSpeech(sourceLang.value));
-        });
-
-        speakTranslatedBtn.addEventListener('click', function() {
-            speakText(translatedText.textContent, getLanguageCodeForSpeech(targetLang.value));
-        });
-
-        // 语音合成函数
-        function speakText(text, lang) {
             if (!text) return;
 
-            // 检查浏览器是否支持语音合成
-            if ('speechSynthesis' in window) {
-                // 停止任何正在进行的语音
-                window.speechSynthesis.cancel();
-
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = lang;
-                window.speechSynthesis.speak(utterance);
-            } else {
-                showError('您的浏览器不支持语音合成');
+            try {
+                // 尝试使用现代Clipboard API
+                if (navigator.clipboard && window.isSecureContext) {
+                    debugLog("使用Clipboard API复制");
+                    navigator.clipboard.writeText(text).then(function() {
+                        showCopySuccess(button);
+                    }).catch(function(err) {
+                        debugLog("Clipboard API失败: " + err);
+                        fallbackCopy(text, button);
+                    });
+                } else {
+                    debugLog("使用fallback复制方法");
+                    fallbackCopy(text, button);
+                }
+            } catch (err) {
+                debugLog("复制过程出错: " + err);
+                showError('复制失败，请手动复制');
             }
         }
 
-        // 将翻译API的语言代码转换为语音合成API的语言代码
-        function getLanguageCodeForSpeech(langCode) {
-            const langMap = {
-                'EN': 'en-US',
-                'ZH': 'zh-CN',
-                'JA': 'ja-JP',
-                'KO': 'ko-KR',
-                'FR': 'fr-FR',
-                'DE': 'de-DE',
-                'ES': 'es-ES',
-                'IT': 'it-IT',
-                'RU': 'ru-RU'
-            };
-            return langMap[langCode] || 'en-US';
+        // 后备复制方法
+        function fallbackCopy(text, button) {
+            try {
+                // 创建临时文本区域
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                textArea.style.top = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+
+                // 执行复制命令
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textArea);
+
+                if (successful) {
+                    showCopySuccess(button);
+                } else {
+                    showError('复制失败，请手动复制');
+                }
+            } catch (err) {
+                debugLog("后备复制失败: " + err);
+                showError('复制失败，请手动复制');
+            }
         }
 
-        // 初始化
+        // 显示复制成功
+        function showCopySuccess(button) {
+            const originalHTML = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(() => {
+                button.innerHTML = originalHTML;
+            }, 2000);
+        }
+
+        // 支持快捷键
+        document.addEventListener('keydown', function(event) {
+            // Ctrl/Cmd + Enter 触发翻译
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                event.preventDefault();
+                translate();
+            }
+        });
+
+        // 初始化设置
         updateCharCount();
+
+        // 可选：显示调试信息区域（在生产环境中删除）
+        // document.getElementById('debug-container').classList.remove('hidden');
+
+        // 检查是否移动设备加载完成
+        debugLog("初始化完成，可以开始使用");
+
+        // 添加CORS请求前缀
+        document.addEventListener('fetch', function(event) {
+            debugLog("拦截fetch请求");
+        }, true);
     });
 </script>
 </body>
