@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TransBridge - 多模型翻译网关</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .bg-gradient {
+            background: linear-gradient(135deg, #4f46e5 0%, #7dd3fc 100%);
+        }
+        .demo-container {
+            min-height: 300px;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s;
+        }
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+<!-- 导航栏 -->
+<nav class="bg-white shadow-md">
+    <div class="container mx-auto px-6 py-3 flex justify-between items-center">
+        <div class="flex items-center">
+            <span class="text-2xl font-bold text-indigo-600">TransBridge</span>
+            <span class="ml-2 text-sm bg-indigo-100 text-indigo-800 py-1 px-2 rounded">翻译网关</span>
+        </div>
+        <div class="flex items-center space-x-4">
+            <a href="https://github.com/fruitbars/transbridge" class="text-gray-700 hover:text-indigo-600" target="_blank">
+                <i class="fab fa-github text-xl"></i>
+            </a>
+            <a href="https://github.com/fruitbars/transbridge#readme" class="hidden md:block text-gray-700 hover:text-indigo-600" target="_blank">文档</a>
+            <a href="#demo" class="hidden md:block text-gray-700 hover:text-indigo-600">在线演示</a>
+            <a href="#features" class="hidden md:block text-gray-700 hover:text-indigo-600">特性</a>
+        </div>
+    </div>
+</nav>
+
+<!-- Hero 部分 (简短版) -->
+<header class="bg-gradient text-white py-10">
+    <div class="container mx-auto px-6 text-center">
+        <h1 class="text-3xl md:text-4xl font-bold mb-3">TransBridge 翻译网关</h1>
+        <p class="text-lg md:text-xl mb-5">基于多种 AI 模型的高性能翻译服务</p>
+    </div>
+</header>
+
+<!-- 在线演示部分 (提前) -->
+<section id="demo" class="py-10 bg-white">
+    <div class="container mx-auto px-6">
+        <h2 class="text-2xl md:text-3xl font-bold text-center mb-8">在线体验</h2>
+        <div class="bg-white rounded-lg shadow-md p-6 max-w-4xl mx-auto demo-container">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2" for="source-lang">源语言</label>
+                    <select id="source-lang" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="EN">英语</option>
+                        <option value="ZH">中文</option>
+                        <option value="JA">日语</option>
+                        <option value="KO">韩语</option>
+                        <option value="FR">法语</option>
+                        <option value="DE">德语</option>
+                        <option value="ES">西班牙语</option>
+                        <option value="IT">意大利语</option>
+                        <option value="RU">俄语</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2" for="target-lang">目标语言</label>
+                    <select id="target-lang" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="ZH">中文</option>
+                        <option value="EN">英语</option>
+                        <option value="JA">日语</option>
+                        <option value="KO">韩语</option>
+                        <option value="FR">法语</option>
+                        <option value="DE">德语</option>
+                        <option value="ES">西班牙语</option>
+                        <option value="IT">意大利语</option>
+                        <option value="RU">俄语</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <label class="block text-gray-700 font-medium mb-2" for="source-text">输入文本</label>
+                <textarea id="source-text" class="w-full p-3 border rounded h-32 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="请输入要翻译的文本..."></textarea>
+            </div>
+
+            <div class="mt-4 text-center">
+                <button id="translate-btn" class="bg-indigo-600 text-white font-medium py-2 px-6 rounded hover:bg-indigo-700 transition duration-200">
+                    <i class="fas fa-language mr-2"></i>翻译
+                </button>
+            </div>
+
+            <div id="result-container" class="mt-6 hidden">
+                <label class="block text-gray-700 font-medium mb-2">翻译结果</label>
+                <div id="translated-text" class="p-3 bg-gray-50 border rounded min-h-[80px] fade-in"></div>
+
+                <div class="mt-4 text-right">
+                    <button id="copy-btn" class="text-indigo-600 font-medium py-1 px-4 rounded hover:bg-indigo-50 transition duration-200">
+                        <i class="far fa-copy mr-1"></i>复制
+                    </button>
+                </div>
+            </div>
+
+            <div id="error-container" class="mt-6 hidden">
+                <div id="error-message" class="p-3 bg-red-50 text-red-600 border border-red-200 rounded fade-in"></div>
+            </div>
+
+            <div id="loading" class="mt-6 text-center hidden">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <p class="mt-2 text-gray-600">正在翻译...</p>
+            </div>
+        </div>
+
+        <div class="text-center mt-6">
+            <p class="text-gray-600">API 服务: <a href="https://freeapi.fanyimao.cn/" class="text-indigo-600 hover:underline">https://freeapi.fanyimao.cn/</a></p>
+        </div>
+    </div>
+</section>
+
+<!-- 特性部分 -->
+<section id="features" class="py-16 bg-gray-50">
+    <div class="container mx-auto px-6">
+        <h2 class="text-3xl font-bold text-center mb-12">主要特性</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition duration-200">
+                <div class="text-indigo-600 text-4xl mb-4">
+                    <i class="fas fa-layer-group"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-2">多模型支持</h3>
+                <p class="text-gray-600">支持多种 AI 翻译模型，如 OpenAI、ChatGLM、DeepSeek 等，基于权重的模型选择策略。</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition duration-200">
+                <div class="text-indigo-600 text-4xl mb-4">
+                    <i class="fas fa-database"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-2">多级缓存</h3>
+                <p class="text-gray-600">支持内存缓存和 Redis 缓存，灵活配置缓存策略，提高翻译效率。</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition duration-200">
+                <div class="text-indigo-600 text-4xl mb-4">
+                    <i class="fas fa-exchange-alt"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-2">API 兼容</h3>
+                <p class="text-gray-600">兼容 DeepL API 接口格式，支持 OpenAI 兼容接口，便于应用迁移。</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition duration-200">
+                <div class="text-indigo-600 text-4xl mb-4">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-2">安全认证</h3>
+                <p class="text-gray-600">支持 API 密钥认证机制，保护您的 API 不被未授权访问。</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition duration-200">
+                <div class="text-indigo-600 text-4xl mb-4">
+                    <i class="fas fa-file-alt"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-2">日志记录</h3>
+                <p class="text-gray-600">异步日志系统，支持自动轮转和长期存储，便于追踪和分析。</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition duration-200">
+                <div class="text-indigo-600 text-4xl mb-4">
+                    <i class="fas fa-rocket"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-2">高性能设计</h3>
+                <p class="text-gray-600">异步处理、多级缓存和优化的网络请求，提升整体性能。</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 开始使用部分 -->
+<section class="py-16 bg-indigo-50">
+    <div class="container mx-auto px-6">
+        <div class="text-center mb-10">
+            <h2 class="text-3xl font-bold mb-4">开始使用 TransBridge</h2>
+            <p class="text-lg max-w-2xl mx-auto">TransBridge 是开源的，您可以免费使用并部署到自己的服务器。</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <div class="bg-white p-8 rounded-lg shadow-md">
+                <h3 class="text-xl font-bold mb-4 flex items-center">
+                    <i class="fab fa-docker text-indigo-600 text-2xl mr-3"></i>
+                    Docker 部署
+                </h3>
+                <div class="bg-gray-100 p-4 rounded-md overflow-auto">
+                    <code class="text-sm">
+                        docker-compose up -d
+                    </code>
+                </div>
+                <p class="mt-4 text-gray-600">使用 Docker Compose 一键部署服务，包含 Redis 缓存和配置。</p>
+            </div>
+
+            <div class="bg-white p-8 rounded-lg shadow-md">
+                <h3 class="text-xl font-bold mb-4 flex items-center">
+                    <i class="fas fa-code text-indigo-600 text-2xl mr-3"></i>
+                    API 使用
+                </h3>
+                <div class="bg-gray-100 p-4 rounded-md overflow-auto">
+                    <code class="text-sm">
+                        curl -X POST "https://freeapi.fanyimao.cn/v2/translate" \
+                        -H "Authorization: Bearer your-api-key" \
+                        -H "Content-Type: application/json" \
+                        -d '{"text": "Hello world","source_lang": "EN","target_lang": "ZH"}'
+                    </code>
+                </div>
+                <p class="mt-4 text-gray-600">简单的 API 调用，轻松集成到您的应用中。</p>
+            </div>
+        </div>
+
+        <div class="text-center mt-10">
+            <a href="https://github.com/fruitbars/transbridge" class="inline-block bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg shadow-lg hover:bg-indigo-700 transition duration-200" target="_blank">
+                <i class="fab fa-github mr-2"></i>访问 GitHub 仓库
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- 技术栈部分 -->
+<section class="py-16 bg-white">
+    <div class="container mx-auto px-6">
+        <h2 class="text-3xl font-bold text-center mb-12">技术亮点</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+            <div>
+                <h3 class="text-xl font-bold mb-4 text-indigo-600">后端技术</h3>
+                <ul class="space-y-2">
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>使用 Go 语言开发，高性能并发处理</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>多级缓存架构，支持内存和 Redis</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>统一的 API 接口，支持多种翻译后端</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>Docker 容器化部署，简单易用</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>异步日志系统，自动文件轮转</span>
+                    </li>
+                </ul>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold mb-4 text-indigo-600">配置灵活</h3>
+                <ul class="space-y-2">
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>支持多种 AI 模型配置</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>基于权重的负载均衡</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>灵活的缓存策略配置</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>API 认证密钥管理</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="text-indigo-600 mr-2"><i class="fas fa-check-circle"></i></span>
+                        <span>详细的日志配置选项</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 页脚 -->
+<footer class="bg-gray-800 text-white py-8">
+    <div class="container mx-auto px-6">
+        <div class="flex flex-col md:flex-row justify-between items-center">
+            <div class="mb-4 md:mb-0">
+                <span class="text-xl font-bold">TransBridge</span>
+                <span class="ml-2 text-gray-400">多模型翻译网关</span>
+            </div>
+            <div class="flex space-x-4">
+                <a href="https://github.com/fruitbars/transbridge" class="text-gray-400 hover:text-white" target="_blank">
+                    <i class="fab fa-github text-xl"></i>
+                </a>
+                <a href="https://github.com/fruitbars/transbridge#readme" class="text-gray-400 hover:text-white" target="_blank">文档</a>
+                <a href="https://freeapi.fanyimao.cn/" class="text-gray-400 hover:text-white" target="_blank">API</a>
+            </div>
+        </div>
+        <div class="mt-4 text-center text-gray-400 text-sm">
+            <p>&copy; 2025 TransBridge. MIT 许可证开源。</p>
+        </div>
+    </div>
+</footer>
+
+<!-- 脚本 -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const translateBtn = document.getElementById('translate-btn');
+        const sourceText = document.getElementById('source-text');
+        const sourceLang = document.getElementById('source-lang');
+        const targetLang = document.getElementById('target-lang');
+        const translatedText = document.getElementById('translated-text');
+        const resultContainer = document.getElementById('result-container');
+        const errorContainer = document.getElementById('error-container');
+        const errorMessage = document.getElementById('error-message');
+        const loading = document.getElementById('loading');
+        const copyBtn = document.getElementById('copy-btn');
+
+        // API URL
+        const API_URL = 'https://freeapi.fanyimao.cn/v2/translate';
+
+        // 翻译函数
+        translateBtn.addEventListener('click', async function() {
+            const text = sourceText.value.trim();
+            if (!text) {
+                showError('请输入要翻译的文本');
+                return;
+            }
+
+            // 显示加载中
+            loading.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer demo-key' // 这里使用演示密钥，实际使用中应替换为有效密钥
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        source_lang: sourceLang.value,
+                        target_lang: targetLang.value
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.code === 200) {
+                    translatedText.textContent = data.data;
+                    resultContainer.classList.remove('hidden');
+                } else {
+                    showError(`翻译失败: ${data.data}`);
+                }
+            } catch (error) {
+                showError(`请求错误: ${error.message}`);
+            } finally {
+                loading.classList.add('hidden');
+            }
+        });
+
+        // 显示错误
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorContainer.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+        }
+
+        // 复制按钮
+        copyBtn.addEventListener('click', function() {
+            const text = translatedText.textContent;
+            navigator.clipboard.writeText(text).then(function() {
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check mr-1"></i>已复制';
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                }, 2000);
+            }).catch(function() {
+                showError('复制失败，请手动复制');
+            });
+        });
+
+        // 语言互换按钮
+        const swapLangBtn = document.createElement('button');
+        swapLangBtn.innerHTML = '<i class="fas fa-exchange-alt"></i>';
+        swapLangBtn.className = 'absolute bg-gray-200 text-gray-700 p-2 rounded-full hover:bg-gray-300 transition duration-200';
+        swapLangBtn.style.left = '50%';
+        swapLangBtn.style.top = '50%';
+        swapLangBtn.style.transform = 'translate(-50%, -50%)';
+
+        const langContainer = document.querySelector('.grid.grid-cols-1.md\\:grid-cols-2');
+        langContainer.style.position = 'relative';
+        langContainer.appendChild(swapLangBtn);
+
+        swapLangBtn.addEventListener('click', function() {
+            const sourceVal = sourceLang.value;
+            sourceLang.value = targetLang.value;
+            targetLang.value = sourceVal;
+        });
+    });
+</script>
+</body>
+</html>
