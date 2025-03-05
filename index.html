@@ -94,6 +94,7 @@
             <div class="flex flex-wrap justify-center items-center">
                 <div class="mr-2 mb-2">
                     <select id="source-lang" class="p-2 border rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                        <option value="AUTO">自动检测</option>
                         <option value="EN">英语</option>
                         <option value="ZH">中文</option>
                         <option value="JA">日语</option>
@@ -165,11 +166,14 @@
                 </div>
             </div>
 
-            <!-- 翻译按钮区域 -->
-            <div class="border-t border-gray-200 p-4 flex justify-between items-center">
-                <div id="status-message" class="text-gray-500 text-sm"></div>
-                <button id="translate-btn" class="bg-indigo-600 text-white font-medium py-2 px-6 rounded hover:bg-indigo-700 transition duration-200 flex items-center">
-                    <i class="fas fa-language mr-2"></i>翻译
+            <!-- 翻译按钮区域（调整为更小尺寸） -->
+            <div class="border-t border-gray-200 p-3 flex justify-between items-center">
+                <div class="flex items-center">
+                    <div id="status-message" class="text-gray-500 text-sm mr-3"></div>
+                    <div id="translation-time" class="text-xs text-gray-400 hidden">耗时: <span id="time-value">0</span>ms</div>
+                </div>
+                <button id="translate-btn" class="bg-indigo-600 text-white font-medium py-1.5 px-4 rounded hover:bg-indigo-700 transition duration-200 flex items-center text-sm">
+                    <i class="fas fa-language mr-1.5"></i>翻译
                 </button>
             </div>
 
@@ -178,17 +182,18 @@
                 <div id="error-message" class="p-3 bg-red-50 text-red-600 border border-red-200 rounded fade-in"></div>
             </div>
 
-            <!-- 加载指示器 -->
-            <div id="loading" class="absolute inset-0 bg-white bg-opacity-80 flex items-center justify-center hidden">
-                <div class="flex flex-col items-center">
-                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
-                    <p class="mt-2 text-gray-600">正在翻译...</p>
+            <!-- 加载指示器 (更小、更不突兀) -->
+            <div id="loading" class="absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center hidden">
+                <div class="bg-white rounded-lg shadow-md p-3 flex items-center">
+                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600 mr-2"></div>
+                    <p class="text-sm text-gray-600">正在翻译...</p>
                 </div>
             </div>
         </div>
 
         <div class="text-center mt-6">
             <p class="text-gray-600">API 服务: <a href="https://freeapi.fanyimao.cn/" class="text-indigo-600 hover:underline">https://freeapi.fanyimao.cn/</a></p>
+            <p class="text-xs text-gray-500 mt-1">使用 Authorization: Bearer tr-98584e33-f387-42cc-a467-f02513bd400d</p>
         </div>
     </div>
 </section>
@@ -289,7 +294,7 @@
         const statusMessage = document.getElementById('status-message');
 
         // API URL
-        const API_URL = 'https://freeapi.fanyimao.cn/v2/translate';
+        const API_URL = 'https://freeapi.fanyimao.cn/translate';
 
         // 更新字符计数
         function updateCharCount() {
@@ -350,6 +355,10 @@
             }
 
             errorContainer.classList.add('hidden');
+            document.getElementById('translation-time').classList.add('hidden');
+
+            // 记录开始时间
+            const startTime = performance.now();
 
             try {
                 const response = await fetch(API_URL, {
@@ -360,7 +369,7 @@
                     },
                     body: JSON.stringify({
                         text: text,
-                        source_lang: sourceLang.value,
+                        source_lang: sourceLang.value === "AUTO" ? "" : sourceLang.value,
                         target_lang: targetLang.value
                     })
                 });
@@ -371,15 +380,23 @@
 
                 const data = await response.json();
 
-                if (data.code === 200) {
-                    translatedText.textContent = data.data;
+                // 计算耗时并显示
+                const endTime = performance.now();
+                const timeTaken = Math.round(endTime - startTime);
+                document.getElementById('time-value').textContent = timeTaken;
+                document.getElementById('translation-time').classList.remove('hidden');
+
+                if (data.code === 200 || (data.translations && data.translations.length > 0)) {
+                    // 处理新的API响应格式
+                    let translatedContent = data.translations ? data.translations[0].text : data.data;
+                    translatedText.textContent = translatedContent;
                     // 翻译完成后更新状态
                     statusMessage.textContent = "翻译完成";
                     setTimeout(() => {
                         statusMessage.textContent = "";
                     }, 2000);
                 } else {
-                    showError(`翻译失败: ${data.data}`);
+                    showError(`翻译失败: ${data.message || data.data || '未知错误'}`);
                 }
             } catch (error) {
                 showError(`请求错误: ${error.message}`);
