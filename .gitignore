@@ -1,0 +1,40 @@
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+
+# 编译生成的可执行文件
+*.exe
+*.dll
+*.so
+*.obj
+*.o
+
+# 编译生成的临时文件
+*.test
+*.out
+
+# Go模块缓存和包缓存
+go.sum
+go.mod
+vendor/
+
+# 开发工具生成的文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# 日志文件
+*.log
+
+# 配置文件（如果不想跟踪敏感配置）
+config.yaml
+config.json
+
+# 本地构建目录
+build/
+dist/
+
+# 测试覆盖率报告
+coverage.out
