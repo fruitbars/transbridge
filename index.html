@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TransBridge - 大语言模型翻译网关</title>
     <meta name="description" content="TransBridge 通过统一的标准接口，以 DeepL API 接口形式格式，将底层的多种大模型翻译能力无缝接入，从而极大降低大模型翻译的使用门槛。">
-    <!-- 添加keywords -->
     <meta name="keywords" content="大语言模型,翻译网关,语言翻译,DeepL">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -14,7 +13,8 @@
             background: linear-gradient(135deg, #4f46e5 0%, #7dd3fc 100%);
         }
         .demo-container {
-            min-height: 400px;
+            /* 使用min-height保证容器最小高度，避免固定高度带来的局限 */
+            min-height: 300px;
         }
         .fade-in {
             animation: fadeIn 0.5s;
@@ -28,19 +28,20 @@
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
         .textarea-container {
-            height: 180px;
             position: relative;
+            /* 移除固定高度，让内容多时自动扩展 */
         }
         .textarea-container textarea {
-            height: 100%;
+            /* 使用min-height替代固定高度 */
+            min-height: 220px;
             resize: none;
             overflow-y: auto;
             padding-bottom: 40px;
         }
         .character-count {
             position: absolute;
-            bottom: 8px;
-            right: 12px;
+            bottom: 10px; /* 调整间距 */
+            right: 16px;  /* 调整间距 */
             font-size: 12px;
             color: #6b7280;
         }
@@ -57,6 +58,15 @@
             justify-content: center;
             border-radius: 50%;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        /* 优化功能按钮的定位 */
+        .textarea-container .absolute.bottom-2.left-4 {
+            bottom: 10px;
+            left: 10px;
+        }
+
+        #translated-text {
+            white-space: pre-wrap;
         }
     </style>
 </head>
@@ -79,7 +89,7 @@
     </div>
 </nav>
 
-<!-- Hero 部分 (简短版) -->
+<!-- Hero 部分 -->
 <header class="bg-gradient text-white py-10">
     <div class="container mx-auto px-6 text-center">
         <h1 class="text-3xl md:text-4xl font-bold mb-3">TransBridge 大语言模型翻译网关</h1>
@@ -136,9 +146,8 @@
             <div class="flex flex-col md:flex-row">
                 <!-- 左侧：原文输入 -->
                 <div class="w-full md:w-1/2 p-4 border-b md:border-b-0 md:border-r border-gray-200 textarea-container">
-                    <textarea id="source-text" class="w-full h-full p-3 border-none focus:outline-none focus:ring-0" placeholder="请输入要翻译的文本..."></textarea>
+                    <textarea id="source-text" class="w-full min-h-[300px] p-3 border-none focus:outline-none focus:ring-0" placeholder="请输入要翻译的文本..."></textarea>
                     <div id="source-count" class="character-count">0/5000</div>
-
                     <!-- 原文功能按钮 -->
                     <div class="absolute bottom-2 left-4 flex space-x-2">
                         <button id="clear-source-btn" class="text-gray-500 hover:text-gray-700 p-1" title="清空文本">
@@ -151,9 +160,8 @@
                 </div>
 
                 <!-- 右侧：译文显示 -->
-                <div class="w-full md:w-1/2 p-4 textarea-container bg-gray-50">
+                <div class="w-full md:w-1/2 p-4 textarea-container bg-white relative">
                     <div id="translated-text" class="w-full h-full p-3 overflow-y-auto"></div>
-
                     <!-- 译文功能按钮 -->
                     <div class="absolute bottom-2 left-4 flex space-x-2">
                         <button id="copy-translated-btn" class="text-gray-500 hover:text-gray-700 p-1" title="复制译文">
@@ -163,14 +171,14 @@
                 </div>
             </div>
 
-            <!-- 翻译按钮区域（调整为更小尺寸） -->
-            <div class="border-t border-gray-200 p-3 flex justify-between items-center">
+            <!-- 翻译按钮区域 -->
+            <div class="border-t border-gray-200 p-3 flex flex-col md:flex-row justify-between items-center space-y-2 md:space-y-0">
                 <div class="flex items-center">
                     <div id="status-message" class="text-gray-500 text-sm mr-3"></div>
                     <div id="translation-time" class="text-xs text-gray-400 hidden">耗时: <span id="time-value">0</span>ms</div>
                 </div>
-                <button id="translate-btn" class="bg-indigo-600 text-white font-medium py-1.5 px-4 rounded hover:bg-indigo-700 transition duration-200 flex items-center text-sm">
-                    <i class="fas fa-language mr-1.5"></i>翻译
+                <button id="translate-btn" class="bg-indigo-600 text-white font-medium py-2 px-6 rounded hover:bg-indigo-700 transition duration-200 flex items-center text-sm">
+                    <i class="fas fa-language mr-2"></i>翻译
                 </button>
             </div>
 
@@ -179,12 +187,12 @@
                 <div id="error-message" class="p-3 bg-red-50 text-red-600 border border-red-200 rounded fade-in text-sm"></div>
             </div>
 
-            <!-- 调试信息区域 - 可根据需要显示/隐藏 -->
+            <!-- 调试信息区域 -->
             <div id="debug-container" class="p-2 border-t border-gray-200 hidden">
                 <div class="text-xs text-gray-500 whitespace-pre-wrap" id="debug-output"></div>
             </div>
 
-            <!-- 加载指示器 (更小、更不突兀) -->
+            <!-- 加载指示器 -->
             <div id="loading" class="absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center hidden">
                 <div class="bg-white rounded-lg shadow-md p-3 flex items-center">
                     <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600 mr-2"></div>
@@ -276,24 +284,17 @@
 <!-- 脚本 -->
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // 调试日志函数
         function debugLog(message) {
             const debugContainer = document.getElementById('debug-container');
             const debugOutput = document.getElementById('debug-output');
-
             if (debugOutput) {
                 const timestamp = new Date().toISOString().substr(11, 8);
                 debugOutput.textContent += `[${timestamp}] ${message}\n`;
-
-                // 自动滚动到底部
                 debugOutput.scrollTop = debugOutput.scrollHeight;
             }
-
-            // 打印到控制台以便调试
             console.log(message);
         }
 
-        // 检测是否为移动设备
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         if (isMobile) {
             debugLog("检测到移动设备");
@@ -301,7 +302,6 @@
             debugLog("检测到桌面设备");
         }
 
-        // 获取DOM元素
         const translateBtn = document.getElementById('translate-btn');
         const sourceText = document.getElementById('source-text');
         const sourceLang = document.getElementById('source-lang');
@@ -317,15 +317,11 @@
         const copyTranslatedBtn = document.getElementById('copy-translated-btn');
         const statusMessage = document.getElementById('status-message');
 
-        // API URL
         const API_URL = 'https://freeapi.fanyimao.cn/translate';
 
-        // 更新字符计数
         function updateCharCount() {
             const count = sourceText.value.length;
             sourceCount.textContent = `${count}/5000`;
-
-            // 如果超过限制，改变颜色
             if (count > 5000) {
                 sourceCount.classList.add('text-red-600');
             } else {
@@ -333,45 +329,35 @@
             }
         }
 
-        // 输入时更新字符计数
         sourceText.addEventListener('input', updateCharCount);
 
-        // 自动翻译（当用户停止输入一段时间后）
         let typingTimer;
-        const doneTypingInterval = 1000; // 1秒
-
+        const doneTypingInterval = 1000;
         sourceText.addEventListener('keyup', function() {
             clearTimeout(typingTimer);
             if (sourceText.value) {
                 typingTimer = setTimeout(autoTranslate, doneTypingInterval);
             }
         });
-
         sourceText.addEventListener('keydown', function() {
             clearTimeout(typingTimer);
         });
 
-        // 自动翻译函数
         function autoTranslate() {
-            // 如果文本不为空，且有不同于上一次的值
             if (sourceText.value.trim() && sourceText.dataset.lastTranslated !== sourceText.value) {
-                // 设置状态消息而不是显示加载动画
                 statusMessage.textContent = "正在自动翻译...";
-                translate(true); // 传入true表示这是自动翻译
+                translate(true);
             }
         }
 
-        // 使用XMLHttpRequest的传统翻译函数
         function legacyTranslate(text, sourceLangVal, targetLangVal) {
             return new Promise((resolve, reject) => {
                 debugLog("使用XMLHttpRequest发送请求");
-
                 const xhr = new XMLHttpRequest();
                 xhr.open('POST', API_URL, true);
                 xhr.setRequestHeader('Content-Type', 'application/json');
                 xhr.setRequestHeader('Authorization', 'Bearer tr-98584e33-f387-42cc-a467-f02513bd400d');
-                xhr.timeout = 20000; // 20秒超时
-
+                xhr.timeout = 20000;
                 xhr.onload = function() {
                     debugLog(`收到响应: 状态 ${xhr.status}`);
                     if (xhr.status >= 200 && xhr.status < 300) {
@@ -388,12 +374,10 @@
                         reject(new Error(`HTTP错误: ${xhr.status}`));
                     }
                 };
-
                 xhr.onerror = function() {
                     debugLog("网络请求失败");
                     reject(new Error('网络请求失败'));
                 };
-
                 xhr.ontimeout = function() {
                     debugLog("请求超时");
                     reject(new Error('请求超时'));
@@ -410,13 +394,10 @@
             });
         }
 
-        // 使用fetch API的现代翻译函数
         async function modernTranslate(text, sourceLangVal, targetLangVal) {
             debugLog("使用Fetch API发送请求");
-
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒超时
-
+            const timeoutId = setTimeout(() => controller.abort(), 20000);
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
@@ -431,15 +412,11 @@
                     }),
                     signal: controller.signal
                 });
-
                 clearTimeout(timeoutId);
-
                 debugLog(`收到响应: 状态 ${response.status}`);
-
                 if (!response.ok) {
                     throw new Error(`HTTP错误 ${response.status}: ${response.statusText}`);
                 }
-
                 const data = await response.json();
                 debugLog("响应解析成功");
                 return data;
@@ -452,55 +429,37 @@
             }
         }
 
-        // 翻译函数
         async function translate(isAuto = false) {
             const text = sourceText.value.trim();
             if (!text) {
                 showError('请输入要翻译的文本');
                 return;
             }
-
-            // 存储当前文本，用于自动翻译比较
             sourceText.dataset.lastTranslated = text;
-
-            // 如果不是自动翻译，显示加载动画
             if (!isAuto) {
                 loading.classList.remove('hidden');
                 statusMessage.textContent = "";
             }
-
             errorContainer.classList.add('hidden');
             document.getElementById('translation-time').classList.add('hidden');
-
-            // 记录开始时间
             const startTime = performance.now();
-
             try {
                 debugLog("开始翻译请求");
-
                 let data;
-                // 根据设备类型选择不同的请求方法
                 if (isMobile) {
                     data = await legacyTranslate(text, sourceLang.value, targetLang.value);
                 } else {
                     data = await modernTranslate(text, sourceLang.value, targetLang.value);
                 }
-
-                // 计算耗时并显示
                 const endTime = performance.now();
                 const timeTaken = Math.round(endTime - startTime);
                 document.getElementById('time-value').textContent = timeTaken;
                 document.getElementById('translation-time').classList.remove('hidden');
-
                 debugLog(`响应数据: ${JSON.stringify(data).substring(0, 100)}...`);
-
                 if (data.code === 200 || (data.translations && data.translations.length > 0)) {
-                    // 处理新的API响应格式
                     let translatedContent = data.translations ? data.translations[0].text : data.data;
                     debugLog(`翻译内容获取成功: ${translatedContent.substring(0, 50)}...`);
-
                     translatedText.textContent = translatedContent;
-                    // 翻译完成后更新状态
                     statusMessage.textContent = "翻译完成";
                     setTimeout(() => {
                         statusMessage.textContent = "";
@@ -511,8 +470,6 @@
                 }
             } catch (error) {
                 debugLog(`错误: ${error.message}`);
-
-                // 区分不同类型的错误
                 if (error.name === 'AbortError' || error.message.includes('timeout')) {
                     showError("请求超时，请检查网络连接或稍后再试");
                 } else if (error.message.includes('NetworkError') || error.message.includes('network')) {
@@ -527,12 +484,10 @@
             }
         }
 
-        // 点击翻译按钮
         translateBtn.addEventListener('click', function() {
             translate();
         });
 
-        // 显示错误
         function showError(message) {
             errorMessage.textContent = message;
             errorContainer.classList.remove('hidden');
@@ -540,20 +495,15 @@
             debugLog(`显示错误: ${message}`);
         }
 
-        // 交换语言
         swapLangBtn.addEventListener('click', function() {
             debugLog("交换语言");
-            // 不交换自动检测
             if (sourceLang.value === "AUTO") {
                 showError("自动检测语言不能交换");
                 return;
             }
-
             const sourceVal = sourceLang.value;
             sourceLang.value = targetLang.value;
             targetLang.value = sourceVal;
-
-            // 如果已经有译文，也交换文本
             if (translatedText.textContent) {
                 const tempText = sourceText.value;
                 sourceText.value = translatedText.textContent;
@@ -562,7 +512,6 @@
             }
         });
 
-        // 清空原文
         clearSourceBtn.addEventListener('click', function() {
             debugLog("清空原文");
             sourceText.value = '';
@@ -570,24 +519,19 @@
             updateCharCount();
         });
 
-        // 复制原文
         copySourceBtn.addEventListener('click', function() {
             debugLog("复制原文");
             copyText(sourceText.value, copySourceBtn);
         });
 
-        // 复制译文
         copyTranslatedBtn.addEventListener('click', function() {
             debugLog("复制译文");
             copyText(translatedText.textContent, copyTranslatedBtn);
         });
 
-        // 通用复制函数
         function copyText(text, button) {
             if (!text) return;
-
             try {
-                // 尝试使用现代Clipboard API
                 if (navigator.clipboard && window.isSecureContext) {
                     debugLog("使用Clipboard API复制");
                     navigator.clipboard.writeText(text).then(function() {
@@ -606,10 +550,8 @@
             }
         }
 
-        // 后备复制方法
         function fallbackCopy(text, button) {
             try {
-                // 创建临时文本区域
                 const textArea = document.createElement('textarea');
                 textArea.value = text;
                 textArea.style.position = 'fixed';
@@ -618,11 +560,8 @@
                 document.body.appendChild(textArea);
                 textArea.focus();
                 textArea.select();
-
-                // 执行复制命令
                 const successful = document.execCommand('copy');
                 document.body.removeChild(textArea);
-
                 if (successful) {
                     showCopySuccess(button);
                 } else {
@@ -634,7 +573,6 @@
             }
         }
 
-        // 显示复制成功
         function showCopySuccess(button) {
             const originalHTML = button.innerHTML;
             button.innerHTML = '<i class="fas fa-check"></i>';
@@ -643,25 +581,16 @@
             }, 2000);
         }
 
-        // 支持快捷键
         document.addEventListener('keydown', function(event) {
-            // Ctrl/Cmd + Enter 触发翻译
             if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
                 event.preventDefault();
                 translate();
             }
         });
 
-        // 初始化设置
         updateCharCount();
-
-        // 可选：显示调试信息区域（在生产环境中删除）
-        // document.getElementById('debug-container').classList.remove('hidden');
-
-        // 检查是否移动设备加载完成
         debugLog("初始化完成，可以开始使用");
 
-        // 添加CORS请求前缀
         document.addEventListener('fetch', function(event) {
             debugLog("拦截fetch请求");
         }, true);
