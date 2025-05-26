@@ -25,22 +25,29 @@ jobs:
       - name: Build
         run: |
           mkdir -p dist
-          VERSION=${GITHUB_REF#refs/tags/}
-          NAME=transbridge
-          OUTNAME=${NAME}-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}
+          # Using GITHUB_REF_NAME is cleaner for getting the tag name directly
+          VERSION_TAG=${GITHUB_REF_NAME} 
+          APP_NAME=transbridge
           
+          OUT_BASE_NAME="${APP_NAME}-${VERSION_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          
+          ACTUAL_BIN_NAME=$OUT_BASE_NAME
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            OUTNAME="$OUTNAME.exe"
+            ACTUAL_BIN_NAME="$ACTUAL_BIN_NAME.exe"
           fi
-
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/$OUTNAME .
+          
+          echo "OUT_BASE_NAME=${OUT_BASE_NAME}" >> $GITHUB_ENV
+          echo "ACTUAL_BIN_NAME=${ACTUAL_BIN_NAME}" >> $GITHUB_ENV
+          
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o "dist/${ACTUAL_BIN_NAME}" .
 
       - name: Archive as .tar.gz
+        env:
+          OUT_BASE_NAME: ${{ env.OUT_BASE_NAME }}
+          ACTUAL_BIN_NAME: ${{ env.ACTUAL_BIN_NAME }}
         run: |
           cd dist
-          for f in *; do
-            tar -czf "${f%.*}.tar.gz" "$f"
-          done
+          tar -czf "${OUT_BASE_NAME}.tar.gz" "${ACTUAL_BIN_NAME}"
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
