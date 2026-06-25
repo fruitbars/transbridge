@@ -20,6 +20,7 @@ type MemoryCache struct {
 	defaultTTL time.Duration
 	permanent  bool
 	stop       chan struct{} // 用于停止清理 goroutine
+	closeOnce  sync.Once
 }
 
 // NewMemoryCache 创建新的内存缓存
@@ -71,19 +72,24 @@ func (c *MemoryCache) cleanExpired() {
 
 func (c *MemoryCache) Get(ctx context.Context, key string) (string, error) {
 	c.RLock()
-	defer c.RUnlock()
-
 	item, ok := c.data[key]
 	if !ok {
+		c.RUnlock()
 		return "", ErrCacheMiss
 	}
 
 	// 检查是否过期
 	if item.expireTime != nil && item.expireTime.Before(time.Now()) {
-		delete(c.data, key)
+		c.RUnlock()
+		c.Lock()
+		if current, exists := c.data[key]; exists && current.expireTime != nil && current.expireTime.Before(time.Now()) {
+			delete(c.data, key)
+		}
+		c.Unlock()
 		return "", ErrCacheMiss
 	}
 
+	c.RUnlock()
 	return item.data, nil
 }
 
@@ -135,7 +141,9 @@ func (c *MemoryCache) Clear(ctx context.Context) error {
 
 // Close 实现 Cache 接口
 func (c *MemoryCache) Close(ctx context.Context) error {
-	close(c.stop) // 停止清理 goroutine
+	c.closeOnce.Do(func() {
+		close(c.stop) // 停止清理 goroutine
+	})
 	c.Lock()
 	c.data = nil // 清空数据
 	c.Unlock()

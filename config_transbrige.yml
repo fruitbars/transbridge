@@ -1,4 +1,4 @@
-# config.example.yml
+# config_transbrige.yml
 server:
   port: 8080
 
@@ -16,7 +16,7 @@ providers:
 
 cache:
   enabled: true
-  types: ["memory", "redis"]
+  types: ["memory", "bbolt"]
 
   # 内存缓存特定配置
   memory:
@@ -33,6 +33,12 @@ cache:
     ttl:
       value: "permanent"          # 7天 (也可以使用: permanent 表示永久存储)
 
+  # bbolt 本地持久化缓存配置
+  bbolt:
+    path: "cache/transbridge.db"
+    ttl:
+      value: "permanent"
+
 prompt:
   template: "Translate this text from {{source_lang}} to {{target_lang}}. Return only the translated content. No explanation.  \nPreserve filenames and non-linguistic content exactly.\nText: \n\n{{input}}"
 
@@ -45,7 +51,7 @@ openai:
 
 
 
-# config.example.yml 添加认证配置
+# API 访问认证配置
 transapi:
   tokens:
     - "tr-98584e33-f387-42cc-a467-f02513bd400d"

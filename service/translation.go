@@ -57,7 +57,7 @@ func (s *TranslationService) Translate(ctx context.Context, provider, model, pro
 		if cachedData, err := s.cache.Get(ctx, cacheKey); err == nil && cachedData != "" {
 			var entry cache.CacheEntry
 			if err := json.Unmarshal([]byte(cachedData), &entry); err == nil {
-				log.Printf("Cache hit for: %s, originally translated by %s/%s",
+				log.Printf("Cache hit for: %s, originally translated by %s, models : %s",
 					cacheKey, entry.APIURL, entry.Model)
 				s.logTranslation(text, entry.Translation, sourceLang, targetLang, entry.APIURL, entry.Provider, entry.Model, cacheKey, true, time.Since(startTime).Milliseconds())
 				return entry.Translation, nil
@@ -93,7 +93,7 @@ func (s *TranslationService) Translate(ctx context.Context, provider, model, pro
 	}
 
 	// 3. 执行翻译
-	translation, err := usedTranslator.Translate(promptTemplate, text, sourceLang, targetLang)
+	translation, err := usedTranslator.Translate(ctx, promptTemplate, text, sourceLang, targetLang)
 	if err != nil {
 		// 记录失败的翻译
 		return "", fmt.Errorf("translation failed with %s/%s: %w",

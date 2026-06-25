@@ -249,6 +249,28 @@ func initCache(cfg *config.Config) (cache.Cache, error) {
 
 			caches = append(caches, cache.NewRedisCache(redisCacheOptions))
 
+		case "bbolt", "bolt":
+			ttl := 24 * time.Hour // 默认1天
+			isPermanent := false
+
+			if duration, ok := cfg.Cache.Bbolt.TTL.Duration(); ok {
+				if duration < 0 {
+					isPermanent = true
+				} else {
+					ttl = duration
+				}
+			}
+
+			bboltCache, err := cache.NewBboltCache(cache.BboltCacheOptions{
+				Path:       cfg.Cache.Bbolt.Path,
+				DefaultTTL: ttl,
+				Permanent:  isPermanent,
+			})
+			if err != nil {
+				return nil, err
+			}
+			caches = append(caches, bboltCache)
+
 		default:
 			return nil, fmt.Errorf("unsupported cache type: %s", cacheType)
 		}

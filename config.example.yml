@@ -1,0 +1,76 @@
+# TransBridge example configuration.
+# Copy this file to config.yml and replace API URLs, model names, and tokens.
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+providers:
+  # OpenAI, Ollama, DeepSeek, ChatGLM, vLLM, LM Studio, and other
+  # OpenAI-compatible services all use provider: "openai".
+  - provider: "openai"
+    api_url: "https://api.openai.com/v1/chat/completions"
+    api_key: "your-upstream-api-key"
+    timeout: 60
+    is_default: true
+    models:
+      - name: "gpt-4o-mini"
+        weight: 10
+        max_tokens: 2000
+        temperature: 0.3
+
+  # Ollama example:
+  # - provider: "openai"
+  #   api_url: "http://localhost:11434/v1/chat/completions"
+  #   api_key: "ollama"
+  #   timeout: 60
+  #   is_default: false
+  #   models:
+  #     - name: "llama3.1:latest"
+  #       weight: 5
+  #       max_tokens: 2000
+  #       temperature: 0.3
+
+cache:
+  enabled: true
+  types: ["memory", "bbolt"]
+
+  memory:
+    ttl:
+      value: "1h"
+    max_size: 10000
+
+  bbolt:
+    path: "cache/transbridge.db"
+    ttl:
+      value: "permanent"
+
+  redis:
+    host: "localhost"
+    port: 6379
+    password: ""
+    db: 0
+    ttl:
+      value: "24h"
+
+prompt:
+  template: "Translate this text from {{source_lang}} to {{target_lang}}. Return only the translated content. No explanation.\nPreserve filenames and non-linguistic content exactly.\nText:\n\n{{input}}"
+
+openai:
+  compatible_api:
+    enabled: true
+    path: "/v1"
+    auth_tokens:
+      - "replace-with-client-token"
+
+transapi:
+  tokens:
+    - "replace-with-client-token"
+
+log:
+  enabled: true
+  file_path: "logs/translation.log"
+  max_size: 100
+  max_age: 30
+  max_backups: 10
+  queue_size: 1000

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	iso639 "github.com/emvi/iso-639-1"
@@ -76,11 +75,8 @@ func ExtractLanguageCode(code string) string {
 // If the template does not contain {{input}}, it is considered invalid,
 // and a default fallback template will be used instead.
 func ApplyPromptTemplate(template, input, sourceLang, targetLang string) (string, error) {
-	log.Println(input, sourceLang, targetLang)
-	log.Println(template)
 	// Validate the template: must contain {{input}} to be meaningful
 	if !strings.Contains(template, "{{input}}") {
-		log.Println("Invalid prompt template: must contain {{input}}")
 		return "", errors.New("Invalid prompt template: must contain {{input}}")
 	}
 

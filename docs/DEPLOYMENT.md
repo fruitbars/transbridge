@@ -19,7 +19,7 @@
 - 支持的操作系统：Linux, macOS, Windows
 - 内存建议：至少 512MB
 - 硬盘空间：至少 100MB
-- 如需 Redis 缓存：Redis 服务器
+- 单机部署推荐使用 bbolt 本地持久化缓存；多实例共享缓存时再使用 Redis
 
 ## 直接运行
 
@@ -35,6 +35,12 @@ cd transbridge
 ```
 
 2. 创建配置文件 `config.yml`：
+
+```bash
+cp config.example.yml config.yml
+```
+
+最小配置结构如下：
 
 ```yaml
 server:
@@ -54,11 +60,15 @@ providers:
 
 cache:
   enabled: true
-  types: ["memory"]
+  types: ["memory", "bbolt"]
   memory:
     ttl:
       value: "1h"
     max_size: 10000
+  bbolt:
+    path: "cache/transbridge.db"
+    ttl:
+      value: "permanent"
 
 transapi:
   tokens:
@@ -137,10 +147,10 @@ sudo ./install-transbridge.sh
 
 1. 确保已安装 [Docker](https://docs.docker.com/get-docker/) 和 [Docker Compose](https://docs.docker.com/compose/install/)
 
-2. 创建 `.env` 文件（或使用项目提供的示例）
+2. 准备配置文件
 ```bash
-cp .env.example .env
-# 根据需要修改 .env 文件中的配置
+cp config.example.yml config.yml
+# 根据需要修改 config.yml 中的 API 地址、模型和密钥
 ```
 
 3. 启动服务
@@ -160,8 +170,8 @@ docker-compose down
 
 Docker Compose 配置提供了以下功能：
 - 自动构建和启动 TransBridge 服务
-- 可选的 Redis 缓存服务
-- 配置文件和日志目录挂载
+- 可选的 Redis 缓存服务：需要时执行 `docker-compose --profile redis up -d`
+- 配置文件、日志目录和 bbolt 缓存目录挂载
 - 健康检查和自动重启
 - 灵活的环境变量配置
 
@@ -173,8 +183,17 @@ Docker Compose 配置提供了以下功能：
 # 构建镜像
 docker build -t transbridge .
 
+# 如果默认 Go 模块代理访问慢，可以显式指定 GOPROXY
+docker build --build-arg GOPROXY=https://goproxy.cn,direct -t transbridge .
+
 # 运行容器
-docker run -d -p 8080:8080 -v $(pwd)/config.yml:/app/config.yml --name transbridge transbridge
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/config.yml:/app/config.yml \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/cache:/app/cache \
+  --name transbridge \
+  transbridge
 
 # 指定版本信息构建
 docker build \
@@ -197,10 +216,12 @@ data:
   config.yml: |
     server:
       port: 8080
+    # 注意：TransBridge 不会自动展开 ${...} 环境变量。
+    # 生产环境建议在部署流水线中渲染该配置，或使用 Secret 挂载完整配置文件。
     providers:
       - provider: "openai"
         api_url: "https://api.openai.com/v1/chat/completions"
-        api_key: "${OPENAI_API_KEY}"
+        api_key: "your-api-key"
         timeout: 30
         is_default: true
         models:
@@ -210,14 +231,21 @@ data:
             temperature: 0.3
     cache:
       enabled: true
-      types: ["memory"]
+      types: ["memory", "redis"]
       memory:
         ttl:
           value: "1h"
         max_size: 10000
-    auth:
+      redis:
+        host: "redis"
+        port: 6379
+        password: ""
+        db: 0
+        ttl:
+          value: "24h"
+    transapi:
       tokens:
-        - "${AUTH_TOKEN}"
+        - "your-auth-token"
 ```
 
 2. 创建部署文件 `transbridge-deployment.yaml`：
@@ -248,17 +276,6 @@ spec:
         - name: config-volume
           mountPath: /app/config.yml
           subPath: config.yml
-        env:
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: transbridge-secrets
-              key: openai-api-key
-        - name: AUTH_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: transbridge-secrets
-              key: auth-token
       volumes:
       - name: config-volume
         configMap:
@@ -281,21 +298,15 @@ spec:
   type: ClusterIP
 ```
 
-4. 创建密钥：
-
-```bash
-kubectl create secret generic transbridge-secrets \
-  --from-literal=openai-api-key=your-api-key \
-  --from-literal=auth-token=your-auth-token
-```
-
-5. 应用配置：
+4. 应用配置：
 
 ```bash
 kubectl apply -f transbridge-config.yaml
 kubectl apply -f transbridge-deployment.yaml
 kubectl apply -f transbridge-service.yaml
 ```
+
+如果使用 Redis 缓存，需要在集群内额外部署 Redis，并确保配置中的 `redis.host` 可解析。
 
 ## 反向代理配置
 
@@ -338,7 +349,25 @@ server {
 
 ## 性能优化
 
-1. 使用 Redis 缓存提高性能：
+1. 选择合适的缓存：
+
+单机部署建议使用 `memory + bbolt`，重启后仍保留缓存：
+
+```yaml
+cache:
+  enabled: true
+  types: ["memory", "bbolt"]
+  memory:
+    ttl:
+      value: "1h"
+    max_size: 10000
+  bbolt:
+    path: "cache/transbridge.db"
+    ttl:
+      value: "permanent"
+```
+
+多实例部署建议使用 Redis 共享缓存：
 
 ```yaml
 cache:
@@ -363,25 +392,7 @@ cache:
 
 ## 监控设置
 
-使用 Prometheus 和 Grafana 监控 TransBridge 的运行状态：
-
-1. 启用 Prometheus 指标端点（在配置文件中添加）：
-
-```yaml
-metrics:
-  enabled: true
-  endpoint: "/metrics"
-```
-
-2. 配置 Prometheus 抓取指标：
-
-```yaml
-scrape_configs:
-  - job_name: 'transbridge'
-    scrape_interval: 15s
-    static_configs:
-      - targets: ['transbridge-host:8080']
-```
+当前版本提供 `/health` 健康检查接口。生产环境可以先用反向代理、容器编排平台或云监控定期探测该接口。Prometheus 指标端点尚未实现，如需指标监控，建议后续增加请求数、上游耗时、缓存命中率和错误数等指标。
 
 ## 安全建议
 
@@ -512,7 +523,7 @@ tail -f /path/to/translation.log
 
 1. 在新服务器上安装 TransBridge
 2. 复制配置文件
-3. 如果使用 Redis 缓存，可以考虑迁移 Redis 数据（如有必要）
+3. 如果使用 bbolt 缓存，复制 `cache/transbridge.db`；如果使用 Redis 缓存，可以考虑迁移 Redis 数据（如有必要）
 4. 更新 DNS 记录或负载均衡器配置
 5. 验证新服务正常工作后，停止旧服务
 
@@ -520,8 +531,8 @@ tail -f /path/to/translation.log
 
 如果您在部署过程中遇到问题，可以：
 
-1. 查阅 [项目问题跟踪器](https://github.com/your-username/transbridge/issues)
-2. 加入 [社区讨论](https://github.com/your-username/transbridge/discussions)
+1. 查阅项目 GitHub Issues
+2. 发起 GitHub Discussions 或提交 Issue 说明复现步骤
 3. 贡献代码或文档改进
 
 ## 进阶使用场景
@@ -538,8 +549,8 @@ TransBridge 可以轻松集成到现有系统中，例如：
 
 TransBridge 设计为易于扩展，如需添加新功能：
 
-1. 添加新的翻译提供商
+1. 接入更多 OpenAI-compatible 上游服务
 2. 实现自定义的缓存策略
 3. 添加更多的 API 端点
 
-请参考 [CONTRIBUTING.md](../CONTRIBUTING.md) 了解如何贡献代码。
+欢迎通过 Issue 和 Pull Request 贡献代码、文档和部署经验。

@@ -1,0 +1,13 @@
+.git
+.env
+config.yml
+config.local.yml
+dist
+logs
+output
+tmp
+*.log
+*.db
+cache/*.db
+.DS_Store
+transbridge

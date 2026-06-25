@@ -146,8 +146,9 @@ create_release() {
 
   # 复制配置示例和文档
   cp config.example.yml $RELEASE_DIR/config.example.yml
+  cp config_transbrige.yml $RELEASE_DIR/config_transbrige.yml 2>/dev/null || true
+  cp config_transbrige_ollama.yml $RELEASE_DIR/config_transbrige_ollama.yml 2>/dev/null || true
   cp README.md $RELEASE_DIR/
-  cp CONFIGURATION.md $RELEASE_DIR/ 2>/dev/null || true
   cp LICENSE $RELEASE_DIR/ 2>/dev/null || true
   cp install-transbridge.sh $RELEASE_DIR/ 2>/dev/null || true
   cp uninstall-transbridge.sh $RELEASE_DIR/ 2>/dev/null || true

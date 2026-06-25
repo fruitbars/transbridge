@@ -26,6 +26,7 @@ func (m ModelIdentifier) String() string {
 type ModelManager struct {
 	translators  map[ModelIdentifier]Translator
 	modelWeights map[ModelIdentifier]int
+	modelOrder   []ModelIdentifier
 	defaultModel ModelIdentifier
 	mu           sync.RWMutex
 	rng          *rand.Rand
@@ -75,18 +76,13 @@ func NewModelManager(providers []config.ProviderConfig) (*ModelManager, error) {
 					modelCfg.MaxTokens,
 					modelCfg.Temperature,
 				)
-			case "ollama":
-				translator = NewOllamaTranslator(
-					provider.APIURL,
-					modelCfg.Name,
-					timeout,
-				)
 			default:
 				return nil, fmt.Errorf("unsupported provider: %s", provider.Provider)
 			}
 
 			mm.translators[identifier] = translator
 			mm.modelWeights[identifier] = modelCfg.Weight
+			mm.modelOrder = append(mm.modelOrder, identifier)
 
 			// 如果是默认提供商的第一个模型，设为默认模型
 			if provider.IsDefault && !defaultFound {
@@ -96,12 +92,13 @@ func NewModelManager(providers []config.ProviderConfig) (*ModelManager, error) {
 		}
 	}
 
+	if len(mm.modelOrder) == 0 {
+		return nil, errors.New("no models configured")
+	}
+
 	if !defaultFound {
-		// 如果没有设置默认模型，使用第一个可用的模型
-		for identifier := range mm.translators {
-			mm.defaultModel = identifier
-			break
-		}
+		// 如果没有设置默认模型，使用配置中的第一个可用模型
+		mm.defaultModel = mm.modelOrder[0]
 	}
 
 	return mm, nil
@@ -113,9 +110,9 @@ func (mm *ModelManager) GetModel(provider, model string) (Translator, error) {
 	defer mm.mu.RUnlock()
 
 	// 由于存储键包含 APIURL，这里以 provider+model 进行匹配查找
-	for id, translator := range mm.translators {
+	for _, id := range mm.modelOrder {
 		if id.Provider == provider && id.Model == model {
-			return translator, nil
+			return mm.translators[id], nil
 		}
 	}
 	return nil, fmt.Errorf("model %s not found for provider %s", model, provider)
@@ -129,12 +126,14 @@ func (mm *ModelManager) GetDefaultModel() Translator {
 }
 
 func (mm *ModelManager) GetRandomModel() Translator {
-	mm.mu.RLock()
-	defer mm.mu.RUnlock()
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 
 	var totalWeight int
-	for _, weight := range mm.modelWeights {
-		totalWeight += weight
+	for _, identifier := range mm.modelOrder {
+		if weight := mm.modelWeights[identifier]; weight > 0 {
+			totalWeight += weight
+		}
 	}
 
 	if totalWeight <= 0 {
@@ -142,7 +141,11 @@ func (mm *ModelManager) GetRandomModel() Translator {
 	}
 
 	r := mm.rng.Intn(totalWeight)
-	for identifier, weight := range mm.modelWeights {
+	for _, identifier := range mm.modelOrder {
+		weight := mm.modelWeights[identifier]
+		if weight <= 0 {
+			continue
+		}
 		r -= weight
 		if r <= 0 {
 			return mm.translators[identifier]
@@ -158,7 +161,7 @@ func (mm *ModelManager) ListModels() []ModelIdentifier {
 	defer mm.mu.RUnlock()
 
 	models := make([]ModelIdentifier, 0, len(mm.translators))
-	for identifier := range mm.translators {
+	for _, identifier := range mm.modelOrder {
 		models = append(models, identifier)
 	}
 	return models
@@ -170,7 +173,7 @@ func (mm *ModelManager) GetModelsByProvider(provider string) []string {
 	defer mm.mu.RUnlock()
 
 	var models []string
-	for identifier := range mm.translators {
+	for _, identifier := range mm.modelOrder {
 		if identifier.Provider == provider {
 			models = append(models, identifier.Model)
 		}

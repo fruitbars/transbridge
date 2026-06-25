@@ -6,6 +6,7 @@ require (
 	github.com/emvi/iso-639-1 v1.1.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/sashabaranov/go-openai v1.36.1
+	go.etcd.io/bbolt v1.3.11
 	golang.org/x/text v0.3.6
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v2 v2.4.0

@@ -17,10 +17,9 @@ services:
     volumes:
       - ${CONFIG_FILE:-./config.yml}:/app/config.yml
       - ${LOGS_DIR:-./logs}:/app/logs
+      - ${CACHE_DIR:-./cache}:/app/cache
     environment:
       - TZ=Asia/Shanghai
-    depends_on:
-      - redis
     networks:
       - transbridge-network
     # 健康检查
@@ -31,9 +30,10 @@ services:
       retries: 3
       start_period: 10s
 
-  # Redis 缓存服务 (可选，如果不需要可以注释掉)
+  # Redis 缓存服务（可选）：需要共享缓存时执行 `docker-compose --profile redis up -d`
   redis:
     image: redis:alpine
+    profiles: ["redis"]
     container_name: transbridge-redis
     restart: unless-stopped
     ports:

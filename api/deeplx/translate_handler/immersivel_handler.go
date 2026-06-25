@@ -77,7 +77,20 @@ func (h *Handler) HandleImmersiveLTranslation(w http.ResponseWriter, r *http.Req
 		wg.Add(1)
 		go func(idx int, t string) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-r.Context().Done():
+				resultChan <- result{
+					index: idx,
+					item: &BatchTranslateItem{
+						Index:              idx,
+						DetectedSourceLang: req.SourceLang,
+						Text:               "",
+						Error:              r.Context().Err().Error(),
+					},
+				}
+				return
+			}
 			defer func() { <-sem }()
 
 			translated, err := h.translationService.Translate(r.Context(), "", "", h.promptTemplate, t, req.SourceLang, req.TargetLang)

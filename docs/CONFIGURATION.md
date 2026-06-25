@@ -29,7 +29,7 @@ server:
 
 ## 提供商配置
 
-提供商配置是最核心的部分，支持配置多个翻译服务提供商。
+提供商配置是最核心的部分。当前上游统一使用 OpenAI-compatible `/v1/chat/completions` 协议，因此 `provider` 固定使用 `openai`；OpenAI、Ollama、DeepSeek、ChatGLM、vLLM、LM Studio 等兼容服务通过不同的 `api_url`、`api_key` 和模型名区分。
 
 ### OpenAI 配置示例
 ```yaml
@@ -49,8 +49,9 @@ providers:
 ### ChatGLM 配置示例
 ```yaml
 providers:
-  - provider: "chatglm"
+  - provider: "openai"
     api_url: "http://localhost:8000/v1/chat/completions"
+    api_key: "your-api-key"
     timeout: 30
     is_default: false
     models:
@@ -63,10 +64,11 @@ providers:
 ### Ollama 配置示例
 ```yaml
 providers:
-  - provider: "ollama"
-    api_url: "http://localhost:11434/api/chat"
+  - provider: "openai"            # Ollama 使用 OpenAI-compatible 接口
+    api_url: "http://localhost:11434/v1/chat/completions"
+    api_key: "ollama"
     timeout: 30
-    is_default: false
+    is_default: true
     models:
       - name: "llama2"
         weight: 5
@@ -78,7 +80,7 @@ providers:
 
 | 参数 | 说明 | 默认值 | 是否必填 |
 |------|------|--------|----------|
-| provider | 提供商类型 | - | 是 |
+| provider | 提供商类型，当前固定为 `openai` | - | 是 |
 | api_url | API 接口地址 | - | 是 |
 | api_key | API 密钥 | - | 部分必填 |
 | timeout | 请求超时时间（秒） | 30 | 否 |
@@ -95,17 +97,28 @@ providers:
 
 ## 缓存配置
 
-缓存配置支持内存缓存和 Redis 缓存两种方式，可以同时启用。
+缓存配置支持内存缓存、Redis 缓存和 bbolt 本地持久化缓存，可以按需组合启用。
 
 ### 内存缓存配置
 ```yaml
 cache:
   enabled: true                # 是否启用缓存
-  types: ["memory"]           # 缓存类型：memory 或 redis
+  types: ["memory"]           # 缓存类型：memory、redis 或 bbolt
   memory:
     ttl:
       value: "1h"            # 缓存过期时间（支持：30s, 5m, 2h, 1d, 1w, permanent）
     max_size: 10000          # 最大缓存条目数
+```
+
+### bbolt 缓存配置
+```yaml
+cache:
+  enabled: true
+  types: ["bbolt"]
+  bbolt:
+    path: "cache/transbridge.db" # bbolt 数据库文件路径
+    ttl:
+      value: "permanent"        # 缓存过期时间
 ```
 
 ### Redis 缓存配置
@@ -130,8 +143,9 @@ cache:
 | types | 缓存类型列表 | [] | 是 |
 | ttl.value | 缓存过期时间 | "1h" | 否 |
 | max_size | 最大缓存条目数 | 10000 | 否 |
+| bbolt.path | bbolt 数据库文件路径 | "cache/transbridge.db" | 否 |
 
-types 可以取值 ["memory"] ["redis"] 和["memory", "redis"]
+types 可以取值 ["memory"]、["redis"]、["bbolt"]、["memory", "bbolt"] 和 ["memory", "redis"]。
 
 ## 认证配置
 
@@ -166,8 +180,6 @@ log:
 server:
   port: 8080
   host: "0.0.0.0"
-  read_timeout: 30
-  write_timeout: 30
 
 providers:
   - provider: "openai"
@@ -181,8 +193,9 @@ providers:
         max_tokens: 2000
         temperature: 0.3
 
-  - provider: "ollama"
-    api_url: "http://localhost:11434/api/chat"
+  - provider: "openai"
+    api_url: "http://localhost:11434/v1/chat/completions"
+    api_key: "ollama"
     timeout: 30
     is_default: false
     models:
@@ -193,11 +206,15 @@ providers:
 
 cache:
   enabled: true
-  types: ["memory", "redis"]
+  types: ["memory", "bbolt"]
   memory:
     ttl:
       value: "1h"
     max_size: 10000
+  bbolt:
+    path: "cache/transbridge.db"
+    ttl:
+      value: "permanent"
   redis:
     host: "localhost"
     port: 6379

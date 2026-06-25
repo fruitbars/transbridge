@@ -66,7 +66,8 @@ func (h *OpenAIHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Requ
 	// 获取模型
 	model, err := h.modelManager.GetModel(providerName, modelName)
 	if err != nil {
-		model = h.modelManager.GetDefaultModel()
+		h.sendError(w, fmt.Sprintf("Model %s not found", req.Model), "invalid_model", http.StatusBadRequest)
+		return
 	}
 
 	// 尝试获取 OpenAI 翻译器
@@ -78,6 +79,7 @@ func (h *OpenAIHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Requ
 
 	// 创建聊天完成实例
 	chatCompletion := translator.NewOpenAIChatCompletion(openaiTranslator)
+	req.Model = openaiTranslator.GetModel()
 
 	// 处理请求
 	openaiResp, err := chatCompletion.CreateChatCompletion(r.Context(), req)
@@ -124,12 +126,12 @@ func (h *OpenAIHandler) HandleListModels(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(response)
 }
 
-// parseModelIdentifier 从模型标识符解析提供商和模型名称
-// 例如: "openai/gpt-3.5-turbo" -> ("openai", "gpt-3.5-turbo")
+// parseModelIdentifier 从模型标识符解析提供商和模型名称。
+// 兼容接口的模型列表返回 provider/model，调用方也应使用同样格式。
 func (h *OpenAIHandler) parseModelIdentifier(modelID string) (provider, model string) {
 	parts := strings.Split(modelID, "/")
 	if len(parts) != 2 {
-		return "", modelID // 如果没有提供商前缀，假设是默认提供商的模型
+		return "", modelID
 	}
 	return parts[0], parts[1]
 }

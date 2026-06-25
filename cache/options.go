@@ -18,3 +18,10 @@ type RedisCacheOptions struct {
 	DefaultTTL time.Duration // 默认过期时间
 	Permanent  bool          // 是否永久存储
 }
+
+// BboltCacheOptions bbolt 缓存选项
+type BboltCacheOptions struct {
+	Path       string
+	DefaultTTL time.Duration
+	Permanent  bool
+}

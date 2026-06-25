@@ -52,9 +52,10 @@ type ModelConfig struct {
 // CacheConfig 缓存配置
 type CacheConfig struct {
 	Enabled bool         `yaml:"enabled"`
-	Types   []string     `yaml:"types"`  // 支持的缓存类型：["memory", "redis"]
+	Types   []string     `yaml:"types"`  // 支持的缓存类型：["memory", "redis", "bbolt"]
 	Memory  MemoryConfig `yaml:"memory"` // 内存缓存特定配置
 	Redis   RedisConfig  `yaml:"redis"`  // Redis缓存特定配置
+	Bbolt   BboltConfig  `yaml:"bbolt"`  // bbolt缓存特定配置
 }
 
 // MemoryConfig 内存缓存特定配置
@@ -70,6 +71,12 @@ type RedisConfig struct {
 	Password string `yaml:"password"`
 	DB       int    `yaml:"db"`
 	TTL      TTL    `yaml:"ttl"` // Redis缓存特定的TTL
+}
+
+// BboltConfig bbolt缓存特定配置
+type BboltConfig struct {
+	Path string `yaml:"path"` // 数据库文件路径
+	TTL  TTL    `yaml:"ttl"`  // bbolt缓存特定的TTL
 }
 
 type PromptConfig struct {

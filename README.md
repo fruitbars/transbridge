@@ -1,15 +1,14 @@
 # TransBridge 🌉
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")
 
 TransBridge 是一个强大的翻译 API 代理服务，通过调用各种大模型 API 实现高质量的机器翻译功能，并提供兼容 DeepL API 接口格式。它提供了丰富的配置选项、灵活的缓存机制和完善的日志记录，可以作为多种大模型翻译服务的统一代理。
 
 ## 🌟 主要特点
 
-- **多提供商支持**：可配置多个翻译 API 提供商，如 OpenAI、ChatGLM、DeepSeek 等
+- **OpenAI 兼容服务支持**：可配置 OpenAI、Ollama、DeepSeek、ChatGLM 等兼容 `/v1/chat/completions` 的服务
 - **多模型加载均衡**：支持基于权重的模型选择策略
-- **多级缓存机制**：灵活配置内存缓存和 Redis 缓存
+- **多级缓存机制**：灵活配置内存缓存、bbolt 本地持久化缓存和 Redis 缓存
 - **API 兼容**：兼容 DeepL API 接口格式，便于无缝迁移
 - **认证安全**：支持 API 密钥认证
 - **日志记录**：异步日志系统，支持自动轮转
@@ -104,6 +103,12 @@ GOOS=linux GOARCH=amd64 go build -o transbridge-linux-amd64
 
 ### 配置
 创建配置文件 `config.yml`：
+```bash
+cp config.example.yml config.yml
+```
+
+按需修改 `config.yml` 中的上游 API 地址、模型名称和认证 token。核心结构如下：
+
 ```yaml
 server:
   port: 8080
@@ -119,15 +124,6 @@ providers:
         weight: 10
         max_tokens: 2000
         temperature: 0.3
-
-cache:
-  enabled: true
-  types: ["memory"]
-
-  memory:
-    ttl:
-      value: "1h"
-    max_size: 10000
 
 prompt:
   template: "Translate the following {{source_lang}} content to {{target_lang}}: {{input}}"
@@ -152,7 +148,7 @@ log:
 
 ### 使用示例
 ```bash
-curl -X POST "http://localhost:8080/v2/translate" \
+curl -X POST "http://localhost:8080/translate" \
   -H "Authorization: Bearer your-api-key" \
   -H "Content-Type: application/json" \
   -d '{

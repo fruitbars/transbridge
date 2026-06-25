@@ -28,11 +28,13 @@ type TranslationRecord struct {
 
 // TranslationLogger 翻译日志记录器
 type TranslationLogger struct {
-	enabled bool
-	logger  *lumberjack.Logger
-	queue   chan TranslationRecord
-	wg      sync.WaitGroup
-	stop    chan struct{}
+	enabled   bool
+	logger    *lumberjack.Logger
+	queue     chan TranslationRecord
+	wg        sync.WaitGroup
+	mu        sync.Mutex
+	closed    bool
+	closeOnce sync.Once
 }
 
 // LoggerOptions 日志记录器选项
@@ -50,6 +52,9 @@ func NewTranslationLogger(opts LoggerOptions) (*TranslationLogger, error) {
 	// 设置默认值
 	if opts.LogFilePath == "" {
 		opts.LogFilePath = "translation.log"
+	}
+	if opts.QueueSize <= 0 {
+		opts.QueueSize = 1000
 	}
 
 	// 确保目录存在
@@ -74,7 +79,6 @@ func NewTranslationLogger(opts LoggerOptions) (*TranslationLogger, error) {
 		enabled: opts.Enabled,
 		logger:  fileLogger,
 		queue:   make(chan TranslationRecord, opts.QueueSize),
-		stop:    make(chan struct{}),
 	}
 
 	// 启动异步处理协程
@@ -90,21 +94,9 @@ func NewTranslationLogger(opts LoggerOptions) (*TranslationLogger, error) {
 func (l *TranslationLogger) processLogs() {
 	defer l.wg.Done()
 
-	for {
-		select {
-		case record := <-l.queue:
-			if err := l.writeLog(record); err != nil {
-				fmt.Printf("Error writing log: %v\n", err)
-			}
-		case <-l.stop:
-			// 处理队列中剩余的日志
-			close(l.queue)
-			for record := range l.queue {
-				if err := l.writeLog(record); err != nil {
-					fmt.Printf("Error writing log during shutdown: %v\n", err)
-				}
-			}
-			return
+	for record := range l.queue {
+		if err := l.writeLog(record); err != nil {
+			fmt.Printf("Error writing log: %v\n", err)
 		}
 	}
 }
@@ -119,6 +111,11 @@ func (l *TranslationLogger) LogTranslation(record TranslationRecord) error {
 	record.Timestamp = time.Now()
 
 	// 将记录放入队列
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return fmt.Errorf("logger is closed")
+	}
 	select {
 	case l.queue <- record:
 		// 成功入队
@@ -151,8 +148,12 @@ func (l *TranslationLogger) Close() error {
 		return nil
 	}
 
-	// 停止处理日志的协程
-	close(l.stop)
+	l.closeOnce.Do(func() {
+		l.mu.Lock()
+		l.closed = true
+		close(l.queue)
+		l.mu.Unlock()
+	})
 	l.wg.Wait()
 
 	// 关闭日志文件

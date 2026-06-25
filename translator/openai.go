@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 	"transbridge/internal/utils"
@@ -69,15 +68,16 @@ func NewOpenAITranslator(provider, apiURL, apiKey, model string, timeout, maxTok
 }
 
 // Translate 实现翻译功能
-func (t *OpenAITranslator) Translate(promptTemplate, text, sourceLang, targetLang string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(t.Timeout)*time.Second)
-	defer cancel()
+func (t *OpenAITranslator) Translate(ctx context.Context, promptTemplate, text, sourceLang, targetLang string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if t.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(t.Timeout)*time.Second)
+		defer cancel()
+	}
 
-	return t.TranslateWithContext(ctx, promptTemplate, text, sourceLang, targetLang)
-}
-
-// TranslateWithContext 支持上下文的翻译方法
-func (t *OpenAITranslator) TranslateWithContext(ctx context.Context, promptTemplate, text, sourceLang, targetLang string) (string, error) {
 	slang, _ := utils.GetLanguageName(sourceLang)
 	tlang, _ := utils.GetLanguageName(targetLang)
 
@@ -92,8 +92,6 @@ func (t *OpenAITranslator) TranslateWithContext(ctx context.Context, promptTempl
 			Content: prompt,
 		},
 	}
-
-	log.Println("prompt", prompt)
 
 	// 构造请求
 	reqBody := openai.ChatCompletionRequest{
@@ -110,22 +108,28 @@ func (t *OpenAITranslator) TranslateWithContext(ctx context.Context, promptTempl
 		return "", fmt.Errorf("failed to marshal request: %w", errVar)
 	}
 
-	// 创建请求
-	req, errVar := http.NewRequestWithContext(ctx, "POST", t.ApiURL, bytes.NewBuffer(reqData))
-	if errVar != nil {
-		return "", fmt.Errorf("failed to create request: %w", errVar)
-	}
-
-	// 设置请求头
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.ApiKey))
-
 	// 发送请求
 	var resp *http.Response
-	//var err error
 	for attempt := 0; attempt <= t.RetryTimes; attempt++ {
+		req, reqErr := http.NewRequestWithContext(ctx, "POST", t.ApiURL, bytes.NewReader(reqData))
+		if reqErr != nil {
+			return "", fmt.Errorf("failed to create request: %w", reqErr)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.ApiKey))
+
 		resp, err = t.Client.Do(req)
 		if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			break
+		}
+		if ctx.Err() != nil {
+			if resp != nil {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+			}
+			return "", ctx.Err()
+		}
+		if attempt == t.RetryTimes {
 			break
 		}
 		// 读取错误响应体以便下次重试前释放连接
@@ -135,10 +139,21 @@ func (t *OpenAITranslator) TranslateWithContext(ctx context.Context, promptTempl
 		}
 		// 指数退避
 		backoff := time.Duration(200*(1<<attempt)) * time.Millisecond
-		time.Sleep(backoff)
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
 	if err != nil {
+		if resp != nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
 		return "", fmt.Errorf("request failed: %w", err)
+	}
+	if resp == nil {
+		return "", fmt.Errorf("request failed: empty response")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -239,6 +254,10 @@ func (t *OpenAIChatCompletion) CreateChatCompletion(ctx context.Context, oaiRequ
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("upstream status %d: %s", resp.StatusCode, string(body))
+	}
 
 	var result openai.ChatCompletionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
