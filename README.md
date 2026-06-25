@@ -9,7 +9,7 @@ TransBridge 是一个强大的翻译 API 代理服务，通过调用各种大模
 - **OpenAI 兼容服务支持**：可配置 OpenAI、Ollama、DeepSeek、ChatGLM 等兼容 `/v1/chat/completions` 的服务
 - **多模型加载均衡**：支持基于权重的模型选择策略
 - **多级缓存机制**：灵活配置内存缓存、bbolt 本地持久化缓存和 Redis 缓存
-- **API 兼容**：兼容 DeepL API 接口格式，便于无缝迁移
+- **API 兼容**：提供简化 `/translate`、DeepL v2 风格 `/deepl/v2/translate` 和沉浸式翻译批量接口
 - **认证安全**：支持 API 密钥认证
 - **日志记录**：异步日志系统，支持自动轮转
 - **高性能设计**：异步日志、缓存优化等提升性能
@@ -147,6 +147,22 @@ log:
 ```
 
 ### 使用示例
+
+DeepL v2 风格接口：
+
+```bash
+curl -X POST "http://localhost:8080/deepl/v2/translate" \
+  -H "Authorization: DeepL-Auth-Key your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": ["Hello world"],
+    "source_lang": "EN",
+    "target_lang": "ZH"
+  }'
+```
+
+简化接口：
+
 ```bash
 curl -X POST "http://localhost:8080/translate" \
   -H "Authorization: Bearer your-api-key" \
@@ -163,6 +179,7 @@ curl -X POST "http://localhost:8080/translate" \
 - [配置详解](docs/CONFIGURATION.md)
 - [API 接口文档](docs/API.md)
 - [部署指南](docs/DEPLOYMENT.md)
+- [技术文档](docs/TECHNICAL.md)
 
 ## 🔧 安装为系统服务
 

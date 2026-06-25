@@ -81,6 +81,19 @@ transapi:
 ./transbridge -config config.yml
 ```
 
+4. 验证 DeepL v2 风格接口：
+
+```bash
+curl -X POST "http://localhost:8080/deepl/v2/translate" \
+  -H "Authorization: DeepL-Auth-Key your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": ["Hello world"],
+    "source_lang": "EN",
+    "target_lang": "ZH"
+  }'
+```
+
 ## 系统服务部署
 
 ### Linux (systemd)
@@ -158,12 +171,21 @@ cp config.example.yml config.yml
 docker-compose up -d
 ```
 
-4. 查看日志
+4. 验证服务
+```bash
+curl http://localhost:8080/health
+curl -X POST "http://localhost:8080/deepl/v2/translate" \
+  -H "Authorization: DeepL-Auth-Key your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"text":["Hello world"],"source_lang":"EN","target_lang":"ZH"}'
+```
+
+5. 查看日志
 ```bash
 docker-compose logs -f
 ```
 
-5. 停止服务
+6. 停止服务
 ```bash
 docker-compose down
 ```

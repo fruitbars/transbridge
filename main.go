@@ -126,9 +126,17 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 	})
 
 	// 注册翻译接口
-	mux.HandleFunc("/translate",
+	translateEndpoint := middleware.Chain(
+		translationHandler.HandleTranslation,
+		middleware.Recovery,
+		middleware.Logger,
+		middleware.CORS,
+	)
+	mux.HandleFunc("/translate", translateEndpoint)
+
+	mux.HandleFunc("/deepl/v2/translate",
 		middleware.Chain(
-			translationHandler.HandleTranslation,
+			translationHandler.HandleDeepLTranslation,
 			middleware.Recovery,
 			middleware.Logger,
 			middleware.CORS,
