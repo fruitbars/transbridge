@@ -247,6 +247,38 @@ models:
 
 大约 80% 请求会选择 `fast-model`。
 
+## 上游限流
+
+不同大模型厂商通常有不同的并发、QPS、QPM 策略。TransBridge 在 translator 层实现 per-model 限流，这样只有真正打到上游的请求才会消耗额度，缓存命中不会进入限流器。
+
+配置入口：
+
+```yaml
+providers:
+  - provider: "openai"
+    rate_limit:
+      max_concurrent: 5
+      qps: 2
+      qpm: 60
+    models:
+      - name: "default-model"
+      - name: "stricter-model"
+        rate_limit:
+          max_concurrent: 1
+          qps: 1
+          qpm: 20
+```
+
+实现细节：
+
+- `rateLimitedTranslator` 包装真实 `Translator`。
+- `max_concurrent` 使用信号量控制同一模型进入上游调用队列的最大并发数，包含正在等待 QPS/QPM 窗口的请求。
+- `qps` 使用 1 秒滑动窗口，并在准备调用上游时计数。
+- `qpm` 使用 1 分钟滑动窗口，并在准备调用上游时计数。
+- provider 级 `rate_limit` 作为默认值，model 级大于 0 的字段覆盖默认值。
+- 等待限流时会监听 request context；客户端取消或请求超时会中断等待。
+- 当前限流是进程内的。多实例部署时，每个实例各自限流；如果厂商额度是全局共享的，需要在负载均衡层按实例数折算配置，或后续实现 Redis/集中式限流。
+
 ## 并发、超时和取消
 
 - HTTP server 有固定读写超时。

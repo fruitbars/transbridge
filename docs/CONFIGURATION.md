@@ -39,11 +39,19 @@ providers:
     api_key: "your-api-key"                                # API 密钥
     timeout: 30                                            # 请求超时时间（秒）
     is_default: true                                       # 是否为默认提供商
+    rate_limit:                                            # 可选，上游限流
+      max_concurrent: 5                                    # 最大并发，0 表示不限制
+      qps: 2                                               # 每秒请求数滑动窗口，0 表示不限制
+      qpm: 60                                              # 每分钟请求数滑动窗口，0 表示不限制
     models:
       - name: "gpt-3.5-turbo"                             # 模型名称
         weight: 10                                         # 负载均衡权重
         max_tokens: 2000                                   # 最大 token 数
         temperature: 0.3                                   # 温度参数
+        rate_limit:                                        # 可选，覆盖 provider rate_limit
+          max_concurrent: 2
+          qps: 1
+          qpm: 30
 ```
 
 ### ChatGLM 配置示例
@@ -85,6 +93,9 @@ providers:
 | api_key | API 密钥 | - | 部分必填 |
 | timeout | 请求超时时间（秒） | 30 | 否 |
 | is_default | 是否为默认提供商 | false | 否 |
+| rate_limit.max_concurrent | 该 provider 默认最大并发上游请求数 | 0 | 否 |
+| rate_limit.qps | 该 provider 默认每秒请求数，滑动窗口 | 0 | 否 |
+| rate_limit.qpm | 该 provider 默认每分钟请求数，滑动窗口 | 0 | 否 |
 
 ### 模型配置参数说明
 
@@ -94,6 +105,42 @@ providers:
 | weight | 负载均衡权重 | 1 | 否 |
 | max_tokens | 最大生成 token 数 | 2000 | 否 |
 | temperature | 采样温度 | 0.3 | 否 |
+| rate_limit.max_concurrent | 覆盖 provider 的最大并发 | 继承 provider | 否 |
+| rate_limit.qps | 覆盖 provider 的每秒请求数 | 继承 provider | 否 |
+| rate_limit.qpm | 覆盖 provider 的每分钟请求数 | 继承 provider | 否 |
+
+### 上游限流说明
+
+`rate_limit` 用于控制对上游大模型厂商的调用节奏，避免触发厂商的并发、QPS 或 QPM 限制。
+
+```yaml
+providers:
+  - provider: "openai"
+    api_url: "https://api.example.com/v1/chat/completions"
+    api_key: "your-api-key"
+    rate_limit:
+      max_concurrent: 5
+      qps: 2
+      qpm: 60
+    models:
+      - name: "fast-model"
+        weight: 10
+      - name: "strict-model"
+        weight: 1
+        rate_limit:
+          max_concurrent: 1
+          qps: 1
+          qpm: 20
+```
+
+规则：
+
+- `max_concurrent` 控制同一模型进入上游调用队列的最大并发数，包含正在等待 QPS/QPM 窗口的请求。
+- `qps` 和 `qpm` 使用滑动窗口，不是固定整秒/整分钟计数。
+- provider 级配置会作为该 provider 下所有模型的默认值。
+- model 级配置中大于 0 的字段会覆盖 provider 默认值。
+- 所有字段为 0 时表示不限流。
+- 缓存命中不会调用上游，因此不会消耗上游限流额度。
 
 ## 缓存配置
 

@@ -8,6 +8,7 @@ TransBridge 是一个强大的翻译 API 代理服务，通过调用各种大模
 
 - **OpenAI 兼容服务支持**：可配置 OpenAI、Ollama、DeepSeek、ChatGLM 等兼容 `/v1/chat/completions` 的服务
 - **多模型加载均衡**：支持基于权重的模型选择策略
+- **上游限流**：支持按 provider/model 配置最大并发、滑动窗口 QPS 和 QPM
 - **多级缓存机制**：灵活配置内存缓存、bbolt 本地持久化缓存和 Redis 缓存
 - **API 兼容**：提供简化 `/translate`、DeepL v2 风格 `/deepl/v2/translate` 和沉浸式翻译批量接口
 - **认证安全**：支持 API 密钥认证

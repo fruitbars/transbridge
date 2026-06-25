@@ -13,11 +13,21 @@ providers:
     api_key: "your-upstream-api-key"
     timeout: 60
     is_default: true
+    # Optional upstream limits. 0 means unlimited.
+    rate_limit:
+      max_concurrent: 5
+      qps: 2
+      qpm: 60
     models:
       - name: "gpt-4o-mini"
         weight: 10
         max_tokens: 2000
         temperature: 0.3
+        # Optional per-model override. Missing/zero values inherit provider limits.
+        # rate_limit:
+        #   max_concurrent: 2
+        #   qps: 1
+        #   qpm: 30
 
   # Ollama example:
   # - provider: "openai"

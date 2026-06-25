@@ -79,6 +79,7 @@ func NewModelManager(providers []config.ProviderConfig) (*ModelManager, error) {
 			default:
 				return nil, fmt.Errorf("unsupported provider: %s", provider.Provider)
 			}
+			translator = newRateLimitedTranslator(translator, mergeRateLimit(provider.RateLimit, modelCfg.RateLimit))
 
 			mm.translators[identifier] = translator
 			mm.modelWeights[identifier] = modelCfg.Weight
@@ -102,6 +103,20 @@ func NewModelManager(providers []config.ProviderConfig) (*ModelManager, error) {
 	}
 
 	return mm, nil
+}
+
+func mergeRateLimit(providerLimit, modelLimit config.RateLimitConfig) config.RateLimitConfig {
+	merged := providerLimit
+	if modelLimit.MaxConcurrent > 0 {
+		merged.MaxConcurrent = modelLimit.MaxConcurrent
+	}
+	if modelLimit.QPS > 0 {
+		merged.QPS = modelLimit.QPS
+	}
+	if modelLimit.QPM > 0 {
+		merged.QPM = modelLimit.QPM
+	}
+	return merged
 }
 
 // GetModel 获取指定提供商和模型的翻译器

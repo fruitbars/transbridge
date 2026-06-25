@@ -32,21 +32,30 @@ type ServerConfig struct {
 }
 
 type ProviderConfig struct {
-	Provider  string        `yaml:"provider"`
-	APIURL    string        `yaml:"api_url"`
-	APIKey    string        `yaml:"api_key"`
-	Timeout   int           `yaml:"timeout"`
-	IsDefault bool          `yaml:"is_default"`
-	Models    []ModelConfig `yaml:"models"`
+	Provider  string          `yaml:"provider"`
+	APIURL    string          `yaml:"api_url"`
+	APIKey    string          `yaml:"api_key"`
+	Timeout   int             `yaml:"timeout"`
+	IsDefault bool            `yaml:"is_default"`
+	RateLimit RateLimitConfig `yaml:"rate_limit"`
+	Models    []ModelConfig   `yaml:"models"`
 }
 
 type ModelConfig struct {
-	Name        string  `yaml:"name"`
-	Weight      int     `yaml:"weight"`
-	TopP        int     `yaml:"top_p"`
-	MaxTokens   int     `yaml:"max_tokens"`
-	Temperature float32 `yaml:"temperature"`
-	Timeout     *int    `yaml:"timeout,omitempty"`
+	Name        string          `yaml:"name"`
+	Weight      int             `yaml:"weight"`
+	TopP        int             `yaml:"top_p"`
+	MaxTokens   int             `yaml:"max_tokens"`
+	Temperature float32         `yaml:"temperature"`
+	Timeout     *int            `yaml:"timeout,omitempty"`
+	RateLimit   RateLimitConfig `yaml:"rate_limit"`
+}
+
+// RateLimitConfig 控制单个上游模型的调用限制。0 表示不限制。
+type RateLimitConfig struct {
+	MaxConcurrent int `yaml:"max_concurrent"`
+	QPS           int `yaml:"qps"`
+	QPM           int `yaml:"qpm"`
 }
 
 // CacheConfig 缓存配置
