@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -121,5 +122,38 @@ func TestListTokenViewsMasksToken(t *testing.T) {
 	}
 	if views[0].Token == "tr-very-secret-token" || views[0].Token == "" {
 		t.Fatalf("masked token = %q, want non-empty masked value", views[0].Token)
+	}
+}
+
+func TestEmptyListsMarshalAsJSONArrays(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "transbridge.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	values := []struct {
+		name string
+		load func() (any, error)
+	}{
+		{"models", func() (any, error) { return st.ListModelViews(ctx) }},
+		{"tokens", func() (any, error) { return st.ListTokenViews(ctx) }},
+		{"prompts", func() (any, error) { return st.ListPrompts(ctx) }},
+		{"logs", func() (any, error) { return st.ListRequestLogs(ctx, 100) }},
+	}
+
+	for _, tt := range values {
+		value, err := tt.load()
+		if err != nil {
+			t.Fatalf("%s load: %v", tt.name, err)
+		}
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatalf("%s marshal: %v", tt.name, err)
+		}
+		if string(data) != "[]" {
+			t.Fatalf("%s marshaled as %s, want []", tt.name, data)
+		}
 	}
 }

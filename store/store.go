@@ -317,7 +317,7 @@ func (s *Store) LoadProviders(ctx context.Context) ([]config.ProviderConfig, err
 	}
 	defer rows.Close()
 
-	var providers []config.ProviderConfig
+	providers := make([]config.ProviderConfig, 0)
 	for rows.Next() {
 		var id int64
 		var isDefault int
@@ -358,7 +358,7 @@ func (s *Store) ListModels(ctx context.Context) ([]ModelRecord, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var records []ModelRecord
+	records := make([]ModelRecord, 0)
 	for rows.Next() {
 		var r ModelRecord
 		var providerDefault, enabled int
@@ -476,7 +476,7 @@ func (s *Store) ListTokens(ctx context.Context) ([]Token, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var tokens []Token
+	tokens := make([]Token, 0)
 	for rows.Next() {
 		var t Token
 		var enabled int
@@ -587,7 +587,7 @@ func (s *Store) ListPrompts(ctx context.Context) ([]PromptVersion, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var prompts []PromptVersion
+	prompts := make([]PromptVersion, 0)
 	for rows.Next() {
 		var p PromptVersion
 		var active int
@@ -661,7 +661,7 @@ func (s *Store) ListRequestLogs(ctx context.Context, limit int) ([]RequestLog, e
 		return nil, err
 	}
 	defer rows.Close()
-	var logs []RequestLog
+	logs := make([]RequestLog, 0)
 	for rows.Next() {
 		var r RequestLog
 		var ts string

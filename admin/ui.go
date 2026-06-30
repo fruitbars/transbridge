@@ -91,13 +91,14 @@ async function req(path, opt) {
   return res.json();
 }
 function esc(v){return String(v ?? '').replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]))}
+function asArray(v){return Array.isArray(v) ? v : []}
 function metric(label, value){return '<div class="metric"><span class="muted">'+label+'</span><strong>'+esc(value)+'</strong></div>'}
 async function loadStats(){
   const s = await req('/stats');
   stats.innerHTML = metric('请求数',s.requests)+metric('成功',s.successes)+metric('失败',s.failures)+metric('缓存命中',s.cache_hits)+metric('平均耗时 ms',Number(s.avg_latency_ms||0).toFixed(1))+metric('启用模型',s.models)+metric('启用 Token',s.enabled_tokens)+metric('Prompt 版本',s.prompt_versions);
 }
 async function loadModels(){
-  const rows = await req('/models');
+  const rows = asArray(await req('/models'));
   models.innerHTML = '<table><thead><tr><th>ID</th><th>Provider</th><th>Model</th><th>权重</th><th>状态</th><th>API URL</th><th></th></tr></thead><tbody>' + rows.map(r =>
     '<tr><td>'+r.id+'</td><td>'+esc(r.provider)+'</td><td>'+esc(r.name)+'</td><td>'+r.weight+'</td><td><span class="pill">'+(r.enabled?'启用':'禁用')+'</span></td><td>'+esc(r.api_url)+'</td><td><button class="danger" onclick="deleteModel('+r.id+')">删除</button></td></tr>'
   ).join('') + '</tbody></table>';
@@ -113,7 +114,7 @@ async function saveModel(){
 }
 async function deleteModel(id){ if(confirm('删除模型?')){ await req('/models?id='+id,{method:'DELETE'}); await loadAll(); } }
 async function loadTokens(){
-  const rows = await req('/tokens');
+  const rows = asArray(await req('/tokens'));
   tokens.innerHTML = '<table><thead><tr><th>ID</th><th>备注</th><th>Scope</th><th>状态</th><th>调用</th><th>最近使用</th><th></th></tr></thead><tbody>' + rows.map(r =>
     '<tr><td>'+r.id+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.scope)+'</td><td>'+r.enabled+'</td><td>'+r.request_count+'</td><td>'+esc(r.last_used_at||'')+'</td><td><button class="danger" onclick="deleteToken('+r.id+')">删除</button></td></tr>'
   ).join('') + '</tbody></table>';
@@ -121,7 +122,7 @@ async function loadTokens(){
 async function createToken(){ await req('/tokens',{method:'POST',body:JSON.stringify({name:t_name.value,token:t_token.value,scope:t_scope.value})}); t_token.value=''; await loadAll(); }
 async function deleteToken(id){ if(confirm('删除 token?')){ await req('/tokens?id='+id,{method:'DELETE'}); await loadAll(); } }
 async function loadPrompts(){
-  const rows = await req('/prompts');
+  const rows = asArray(await req('/prompts'));
   prompts.innerHTML = '<table><thead><tr><th>ID</th><th>名称</th><th>状态</th><th>内容</th><th></th></tr></thead><tbody>' + rows.map(r =>
     '<tr><td>'+r.id+'</td><td>'+esc(r.name)+'</td><td>'+ (r.active?'当前':'历史') +'</td><td><pre>'+esc(r.template).slice(0,500)+'</pre></td><td><button class="secondary" onclick="activatePrompt('+r.id+')">启用</button></td></tr>'
   ).join('') + '</tbody></table>';
@@ -129,7 +130,7 @@ async function loadPrompts(){
 async function createPrompt(){ await req('/prompts',{method:'POST',body:JSON.stringify({name:p_name.value,template:p_template.value,active:p_active.value==='true'})}); await loadAll(); }
 async function activatePrompt(id){ await req('/prompts/activate?id='+id,{method:'POST'}); await loadAll(); }
 async function loadLogs(){
-  const rows = await req('/logs?limit=100');
+  const rows = asArray(await req('/logs?limit=100'));
   logs.innerHTML = '<table><thead><tr><th>时间</th><th>模型</th><th>语言</th><th>缓存</th><th>成功</th><th>耗时</th><th>错误</th></tr></thead><tbody>' + rows.map(r =>
     '<tr><td>'+esc(r.timestamp)+'</td><td>'+esc(r.provider+'/'+r.model)+'</td><td>'+esc(r.source_lang+' -> '+r.target_lang)+'</td><td>'+r.cache_hit+'</td><td>'+r.success+'</td><td>'+Number(r.process_time_ms||0).toFixed(0)+'</td><td>'+esc(r.error)+'</td></tr>'
   ).join('') + '</tbody></table>';
