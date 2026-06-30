@@ -79,6 +79,18 @@ const indexHTML = `<!doctype html>
   </section>
 
   <section>
+    <h2>在线试译</h2>
+    <div class="form-grid">
+      <select id="tr_model"><option value="">自动选择模型</option></select>
+      <input id="tr_source" placeholder="源语言，如 en/zh，可留空" value="en">
+      <input id="tr_target" placeholder="目标语言，如 zh/en" value="zh">
+      <button onclick="tryTranslate()">试译</button>
+    </div>
+    <p><textarea id="tr_text" placeholder="输入要翻译的文本"></textarea></p>
+    <div id="tr_result"></div>
+  </section>
+
+  <section>
     <h2>历史日志</h2>
     <div id="logs"></div>
   </section>
@@ -135,7 +147,37 @@ async function loadLogs(){
     '<tr><td>'+esc(r.timestamp)+'</td><td>'+esc(r.provider+'/'+r.model)+'</td><td>'+esc(r.source_lang+' -> '+r.target_lang)+'</td><td>'+r.cache_hit+'</td><td>'+r.success+'</td><td>'+Number(r.process_time_ms||0).toFixed(0)+'</td><td>'+esc(r.error)+'</td></tr>'
   ).join('') + '</tbody></table>';
 }
-async function loadAll(){ try{ await Promise.all([loadStats(),loadModels(),loadTokens(),loadPrompts(),loadLogs()]); }catch(e){ console.error(e); alert('后台数据加载失败: '+e.message); } }
+async function loadAll(){ try{ await Promise.all([loadStats(),loadModels(),loadTokens(),loadPrompts(),loadLogs(),loadTranslateModels()]); }catch(e){ console.error(e); alert('后台数据加载失败: '+e.message); } }
+async function loadTranslateModels(){
+  const rows = asArray(await req('/models'));
+  const opts = ['<option value="">自动选择模型</option>'].concat(
+    rows.filter(r => r.enabled).map(r => '<option value="'+esc(r.provider)+'/'+esc(r.name)+'">'+esc(r.provider+'/'+r.name)+'</option>')
+  );
+  tr_model.innerHTML = opts.join('');
+}
+async function tryTranslate(){
+  const text = tr_text.value.trim();
+  if(!text){ alert('请输入要翻译的文本'); return; }
+  const sel = tr_model.value;
+  let provider = '', model = '';
+  if(sel){ const parts = sel.split('/'); provider = parts[0]; model = parts.slice(1).join('/'); }
+  tr_result.innerHTML = '<p class="muted">翻译中...</p>';
+  try{
+    const t0 = performance.now();
+    const r = await req('/translate', {method:'POST', body: JSON.stringify({
+      provider: provider, model: model, text: text,
+      source_lang: tr_source.value, target_lang: tr_target.value
+    })});
+    const ms = Math.round(performance.now() - t0);
+    tr_result.innerHTML = '<table><tbody>' +
+      '<tr><th>译文</th><td><pre>'+esc(r.translation)+'</pre></td></tr>' +
+      '<tr><th>服务端耗时</th><td>'+r.elapsed_ms+' ms</td></tr>' +
+      '<tr><th>端到端耗时</th><td>'+ms+' ms</td></tr>' +
+      '</tbody></table>';
+  }catch(e){
+    tr_result.innerHTML = '<p style="color:#c62828">翻译失败: '+esc(e.message)+'</p>';
+  }
+}
 loadAll();
 </script>
 </body>

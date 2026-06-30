@@ -230,7 +230,7 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 			adminPath = "/admin"
 		}
 		adminPath = "/" + strings.Trim(adminPath, "/")
-		adminHandler := admin.NewHandler(adminStore, cfg, modelManager)
+		adminHandler := admin.NewHandler(adminStore, cfg, modelManager, translationService)
 		mux.Handle(adminPath+"/", adminHandler)
 		mux.Handle(adminPath, adminHandler)
 	}

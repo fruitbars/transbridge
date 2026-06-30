@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"transbridge/config"
+	"transbridge/service"
 	"transbridge/store"
 	"transbridge/translator"
 )
@@ -18,16 +20,17 @@ type Handler struct {
 	store        *store.Store
 	cfg          *config.Config
 	modelManager *translator.ModelManager
+	translation  *service.TranslationService
 	basePath     string
 }
 
-func NewHandler(st *store.Store, cfg *config.Config, modelManager *translator.ModelManager) *Handler {
+func NewHandler(st *store.Store, cfg *config.Config, modelManager *translator.ModelManager, translation *service.TranslationService) *Handler {
 	basePath := cfg.Admin.Path
 	if basePath == "" {
 		basePath = "/admin"
 	}
 	basePath = "/" + strings.Trim(basePath, "/")
-	return &Handler{store: st, cfg: cfg, modelManager: modelManager, basePath: basePath}
+	return &Handler{store: st, cfg: cfg, modelManager: modelManager, translation: translation, basePath: basePath}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -81,9 +84,55 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request, path string) 
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		logs, err := h.store.ListRequestLogs(r.Context(), limit)
 		h.write(w, logs, err)
+	case path == "/translate" && r.Method == http.MethodPost:
+		h.tryTranslate(w, r)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (h *Handler) tryTranslate(w http.ResponseWriter, r *http.Request) {
+	if h.translation == nil {
+		h.errorText(w, http.StatusServiceUnavailable, "translation service not available")
+		return
+	}
+	var req struct {
+		Provider   string `json:"provider"`
+		Model      string `json:"model"`
+		Text       string `json:"text"`
+		SourceLang string `json:"source_lang"`
+		TargetLang string `json:"target_lang"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Text == "" || req.TargetLang == "" {
+		h.errorText(w, http.StatusBadRequest, "text and target_lang are required")
+		return
+	}
+
+	promptTemplate, err := h.store.ActivePrompt(r.Context(), h.cfg.Prompt.Template)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	start := time.Now()
+	translation, err := h.translation.Translate(r.Context(), req.Provider, req.Model, promptTemplate, req.Text, req.SourceLang, req.TargetLang)
+	elapsedMs := time.Since(start).Milliseconds()
+	if err != nil {
+		h.errorText(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.write(w, map[string]interface{}{
+		"translation":   translation,
+		"elapsed_ms":    elapsedMs,
+		"source_lang":   req.SourceLang,
+		"target_lang":   req.TargetLang,
+		"used_provider": req.Provider,
+		"used_model":    req.Model,
+	}, nil)
 }
 
 func (h *Handler) upsertModel(w http.ResponseWriter, r *http.Request) {
