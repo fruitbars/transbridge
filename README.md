@@ -68,6 +68,8 @@ cd transbridge
 
 ### 编译
 
+从源码编译需要 Go 1.23 或更高版本。项目使用 `modernc.org/sqlite` 提供无 CGO 的 SQLite 管理后台存储，低于 Go 1.23 的工具链会在 `go mod download` 阶段失败。
+
 #### 使用编译脚本 (推荐)
 
 项目提供了便捷的编译脚本 `build.sh`，可以轻松编译各种平台的版本：

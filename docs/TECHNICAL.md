@@ -439,7 +439,7 @@ git push origin v0.1.0
 
 Dockerfile 使用多阶段构建：
 
-1. `golang:1.22-alpine` 编译静态二进制。
+1. `golang:1.23-alpine` 编译静态二进制。
 2. `alpine:latest` 作为运行镜像。
 3. 从 builder 阶段复制 CA 证书，避免运行阶段访问 apk 仓库。
 4. 默认复制 `config.example.yml` 为镜像内 `/app/config.yml`。
@@ -449,6 +449,8 @@ Dockerfile 使用多阶段构建：
 ```text
 https://goproxy.cn,direct
 ```
+
+Go 版本需要与 `go.mod` 保持一致。当前项目使用 `modernc.org/sqlite` 作为无 CGO SQLite 驱动，最低源码编译版本为 Go 1.23；Dockerfile 和 GitHub Actions 都应使用 Go 1.23 或更高版本。
 
 构建时可覆盖：
 
