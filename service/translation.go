@@ -124,7 +124,7 @@ func (s *TranslationService) Translate(ctx context.Context, provider, model, pro
 	if err != nil {
 		// 记录失败的翻译
 		s.logRequest(ctx, text, "", sourceLang, targetLang, usedTranslator.GetAPIURL(), usedTranslator.GetProvider(), usedTranslator.GetModel(), false, false, err.Error(), time.Since(startTime).Milliseconds())
-		return "", fmt.Errorf("translation failed with %s/%s: %w",
+		return "", fmt.Errorf("translation failed (url=%s model=%s): %w",
 			usedTranslator.GetAPIURL(), usedTranslator.GetModel(), err)
 	}
 
