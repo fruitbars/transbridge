@@ -28,7 +28,7 @@ type BboltCache struct {
 
 func NewBboltCache(opts BboltCacheOptions) (*BboltCache, error) {
 	if opts.Path == "" {
-		opts.Path = "cache/transbridge.db"
+		opts.Path = "data/transbridge_cache.db"
 	}
 	if opts.DefaultTTL <= 0 && !opts.Permanent {
 		opts.DefaultTTL = 24 * time.Hour

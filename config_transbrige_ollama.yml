@@ -35,7 +35,7 @@ cache:
 
   # bbolt 本地持久化缓存配置
   bbolt:
-    path: "cache/transbridge.db"
+    path: "data/transbridge_cache.db"
     ttl:
       value: "permanent"
 

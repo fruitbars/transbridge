@@ -47,5 +47,11 @@ dist/
 logs/translation.log
 logs/*.log
 
+# 运行时数据
+data/
+.omc/
+# cache/ 是源码目录，仅忽略其中误生成的数据库
+cache/*.db
+
 # 测试覆盖率报告
 coverage.out

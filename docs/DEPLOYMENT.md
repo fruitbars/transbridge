@@ -67,7 +67,7 @@ cache:
       value: "1h"
     max_size: 10000
   bbolt:
-    path: "cache/transbridge.db"
+    path: "data/transbridge_cache.db"
     ttl:
       value: "permanent"
 
@@ -406,7 +406,7 @@ cache:
       value: "1h"
     max_size: 10000
   bbolt:
-    path: "cache/transbridge.db"
+    path: "data/transbridge_cache.db"
     ttl:
       value: "permanent"
 ```
@@ -567,7 +567,7 @@ tail -f /path/to/translation.log
 
 1. 在新服务器上安装 TransBridge
 2. 复制配置文件
-3. 如果使用 bbolt 缓存，复制 `cache/transbridge.db`；如果使用 Redis 缓存，可以考虑迁移 Redis 数据（如有必要）
+3. 如果使用 bbolt 缓存，复制 `data/transbridge_cache.db`；如果使用 Redis 缓存，可以考虑迁移 Redis 数据（如有必要）
 4. 更新 DNS 记录或负载均衡器配置
 5. 验证新服务正常工作后，停止旧服务
 

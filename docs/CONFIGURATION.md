@@ -166,7 +166,7 @@ cache:
   enabled: true
   types: ["bbolt"]
   bbolt:
-    path: "cache/transbridge.db" # bbolt 数据库文件路径
+    path: "data/transbridge_cache.db" # bbolt 数据库文件路径
     ttl:
       value: "permanent"        # 缓存过期时间
 ```
@@ -193,7 +193,7 @@ cache:
 | types | 缓存类型列表 | [] | 是 |
 | ttl.value | 缓存过期时间 | "1h" | 否 |
 | max_size | 最大缓存条目数 | 10000 | 否 |
-| bbolt.path | bbolt 数据库文件路径 | "cache/transbridge.db" | 否 |
+| bbolt.path | bbolt 数据库文件路径 | "data/transbridge_cache.db" | 否 |
 
 types 可以取值 ["memory"]、["redis"]、["bbolt"]、["memory", "bbolt"] 和 ["memory", "redis"]。
 
@@ -333,7 +333,7 @@ cache:
       value: "1h"
     max_size: 10000
   bbolt:
-    path: "cache/transbridge.db"
+    path: "data/transbridge_cache.db"
     ttl:
       value: "permanent"
   redis:
