@@ -78,6 +78,16 @@ build_current() {
     echo -e "${RED}编译失败${NC}"
     exit 1
   fi
+
+  # 编译测试工具
+  echo -e "${YELLOW}编译测试工具...${NC}"
+  go build -o $DIST_DIR/transtest ./cmd/transtest
+  if [ $? -eq 0 ]; then
+    echo -e "${GREEN}编译成功: ${DIST_DIR}/transtest${NC}"
+  else
+    echo -e "${RED}transtest 编译失败${NC}"
+    exit 1
+  fi
 }
 
 # 编译 Linux 版本
@@ -87,9 +97,11 @@ build_linux() {
   # AMD64
   echo -e "  编译 Linux amd64..."
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o $DIST_DIR/transbridge-linux-amd64
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $DIST_DIR/transtest-linux-amd64 ./cmd/transtest
   # ARM64
   echo -e "  编译 Linux arm64..."
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o $DIST_DIR/transbridge-linux-arm64
+  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $DIST_DIR/transtest-linux-arm64 ./cmd/transtest
   echo -e "${GREEN}Linux 版本编译完成${NC}"
 }
 
@@ -100,9 +112,11 @@ build_darwin() {
   # AMD64
   echo -e "  编译 macOS amd64..."
   CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o $DIST_DIR/transbridge-darwin-amd64
+  CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o $DIST_DIR/transtest-darwin-amd64 ./cmd/transtest
   # ARM64
   echo -e "  编译 macOS arm64..."
   CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o $DIST_DIR/transbridge-darwin-arm64
+  CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o $DIST_DIR/transtest-darwin-arm64 ./cmd/transtest
   echo -e "${GREEN}macOS 版本编译完成${NC}"
 }
 
@@ -113,9 +127,11 @@ build_windows() {
   # AMD64
   echo -e "  编译 Windows amd64..."
   CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o $DIST_DIR/transbridge-windows-amd64.exe
+  CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o $DIST_DIR/transtest-windows-amd64.exe ./cmd/transtest
   # ARM64
   echo -e "  编译 Windows arm64..."
   CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o $DIST_DIR/transbridge-windows-arm64.exe
+  CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -o $DIST_DIR/transtest-windows-arm64.exe ./cmd/transtest
   echo -e "${GREEN}Windows 版本编译完成${NC}"
 }
 
