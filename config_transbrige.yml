@@ -2,6 +2,18 @@
 server:
   port: 8080
 
+storage:
+  enabled: true
+  type: "sqlite"
+  path: "data/transbridge.db"
+
+admin:
+  enabled: true
+  path: "/admin"
+  username: "admin"
+  password: "123456"
+  local_only: true
+
 providers:
   - provider: "openai"
     api_url: "http://127.0.0.1:9090/v1/chat/completions"
@@ -35,7 +47,7 @@ cache:
 
   # bbolt 本地持久化缓存配置
   bbolt:
-    path: "cache/transbridge.db"
+    path: "data/transbridge_cache.db"
     ttl:
       value: "permanent"
 
