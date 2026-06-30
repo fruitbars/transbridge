@@ -426,7 +426,7 @@ function openModelDialog(initial){
   const isEdit = !!initial;
   const host = $('modal-host');
   const url = m.api_url || '';
-  const urlHint = url && !/\/chat\/completions(\?|$)/.test(url) ? '提示：通常应以 /chat/completions 结尾' : '';
+  const urlHint = url && !/\/chat\/completions(\?|$)/.test(url) ? '将自动追加 /chat/completions' : '';
   host.innerHTML =
     '<div class="modal-bd"><div class="modal" style="width:min(640px,92vw)">'+
       '<div class="m-h">'+(isEdit?'编辑模型':'新建模型')+'</div>'+
@@ -435,7 +435,7 @@ function openModelDialog(initial){
           '<div class="field"><label>Provider</label><input id="d_provider" value="'+esc(m.provider||'openai')+'" placeholder="openai"></div>'+
           '<div class="field"><label>模型名 <span class="muted">(用于路由)</span></label><input id="d_name" value="'+esc(m.name||'')+'" placeholder="gpt-4o-mini"></div>'+
         '</div>'+
-        '<div class="field" style="margin-top:10px"><label>API URL <span class="muted">(完整 chat completions 地址)</span></label>'+
+        '<div class="field" style="margin-top:10px"><label>API URL <span class="muted">(完整地址或仅 base，自动补全 /chat/completions)</span></label>'+
           '<input id="d_api_url" value="'+esc(url)+'" placeholder="https://api.openai.com/v1/chat/completions">'+
           '<span class="muted" id="d_url_hint" style="font-size:11px">'+esc(urlHint)+'</span>'+
         '</div>'+
@@ -456,7 +456,7 @@ function openModelDialog(initial){
     '</div></div>';
   $('d_api_url').addEventListener('input', e=>{
     const v = e.target.value;
-    $('d_url_hint').textContent = v && !/\/chat\/completions(\?|$)/.test(v) ? '提示：通常应以 /chat/completions 结尾' : '';
+    $('d_url_hint').textContent = v && !/\/chat\/completions(\?|$)/.test(v) ? '将自动追加 /chat/completions' : '';
   });
   const close = ()=>{ host.innerHTML=''; document.removeEventListener('keydown', onKey); };
   const onKey = e => {

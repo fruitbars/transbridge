@@ -7,11 +7,30 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 	"transbridge/internal/utils"
 
 	"github.com/sashabaranov/go-openai"
 )
+
+// normalizeChatCompletionsURL appends /chat/completions when the caller
+// supplied only the base URL (e.g. https://host/v1 or https://host/v2),
+// so admin entries don't have to repeat the suffix.
+func normalizeChatCompletionsURL(u string) string {
+	if u == "" {
+		return u
+	}
+	base, query := u, ""
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		base, query = u[:i], u[i:]
+	}
+	base = strings.TrimRight(base, "/")
+	if !strings.HasSuffix(base, "/chat/completions") {
+		base += "/chat/completions"
+	}
+	return base + query
+}
 
 // TranslationMetrics 翻译指标
 type TranslationMetrics struct {
@@ -54,7 +73,7 @@ func NewOpenAITranslator(provider, apiURL, apiKey, model string, timeout, maxTok
 
 	return &OpenAITranslator{
 		Provider:    provider,
-		ApiURL:      apiURL,
+		ApiURL:      normalizeChatCompletionsURL(apiURL),
 		ApiKey:      apiKey,
 		Model:       model,
 		Timeout:     timeout,
