@@ -80,7 +80,7 @@ const indexHTML = `<!doctype html>
   .dot.off{background:#94a3b8}
   .dot.err{background:var(--danger);box-shadow:0 0 0 2px rgba(220,38,38,.15)}
   .dot.warn{background:var(--warn)}
-  .brand-pill{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#fff}
+  .brand-pill{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:500;background:#f1f5f9;color:var(--text);border:1px solid var(--border)}
   /* 指标卡 */
   .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
   .metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
@@ -89,9 +89,7 @@ const indexHTML = `<!doctype html>
   .metric .sub{font-size:11px;color:var(--muted);margin-top:4px}
   /* Toolbar */
   .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .toolbar .search{flex:1;min-width:160px;max-width:280px;position:relative}
-  .toolbar .search input{padding-left:30px}
-  .toolbar .search::before{content:"🔍";position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:.5;font-size:12px}
+  .toolbar .search{flex:1;min-width:160px;max-width:280px}
   /* Pager */
   .pager{display:flex;justify-content:space-between;align-items:center;padding:10px 18px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
   .pager .pages{display:flex;gap:4px}
@@ -113,8 +111,7 @@ const indexHTML = `<!doctype html>
   .modal .m-b{padding:18px;color:var(--text)}
   .modal .m-f{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:#f8fafc}
   /* 空态 */
-  .empty{padding:48px 20px;text-align:center;color:var(--muted)}
-  .empty .em-icon{font-size:32px;margin-bottom:8px;opacity:.5}
+  .empty{padding:48px 20px;text-align:center;color:var(--muted);font-size:13px}
   /* 译文卡片 */
   .tr-result{background:#f8fafc;border:1px solid var(--border);border-radius:6px;padding:14px;margin-top:12px}
   .tr-result pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:14px;font-family:inherit;line-height:1.6}
@@ -126,14 +123,14 @@ const indexHTML = `<!doctype html>
 <body>
 <div class="app">
   <aside>
-    <div class="brand">⚡ TransBridge</div>
+    <div class="brand">TransBridge</div>
     <nav id="nav">
-      <a data-view="dashboard"><span>📊</span> 仪表盘</a>
-      <a data-view="models"><span>🧩</span> 模型 <span class="badge" id="nav-models">·</span></a>
-      <a data-view="tokens"><span>🔑</span> Token <span class="badge" id="nav-tokens">·</span></a>
-      <a data-view="prompts"><span>📝</span> Prompt</a>
-      <a data-view="translate"><span>🌐</span> 在线试译</a>
-      <a data-view="logs"><span>📜</span> 历史日志</a>
+      <a data-view="dashboard">仪表盘</a>
+      <a data-view="models">模型 <span class="badge" id="nav-models">·</span></a>
+      <a data-view="tokens">Token <span class="badge" id="nav-tokens">·</span></a>
+      <a data-view="prompts">Prompt</a>
+      <a data-view="translate">在线试译</a>
+      <a data-view="logs">历史日志</a>
     </nav>
     <div class="foot">Admin Console</div>
   </aside>
@@ -142,7 +139,7 @@ const indexHTML = `<!doctype html>
       <h1 id="page-title">仪表盘</h1>
       <div class="actions">
         <span class="muted" id="last-refresh"></span>
-        <button class="btn ghost sm" onclick="refreshCurrent()" title="刷新当前视图（R）">↻ 刷新</button>
+        <button class="btn ghost sm" onclick="refreshCurrent()" title="刷新当前视图（R）">刷新</button>
       </div>
     </div>
     <div class="content">
@@ -289,11 +286,7 @@ function relTime(ts){
   if(d < 86400*7) return Math.floor(d/86400)+' 天前';
   return new Date(ts).toLocaleDateString();
 }
-function brandColor(p){
-  const map = {openai:'#10a37f', anthropic:'#d97757', deepseek:'#4d6bfe', qwen:'#615ced', moonshot:'#000', ollama:'#0f172a', azure:'#0078d4', google:'#4285f4', groq:'#f55036'};
-  return map[(p||'').toLowerCase()] || '#64748b';
-}
-function brandPill(p){ return '<span class="brand-pill" style="background:'+brandColor(p)+'">'+esc(p||'?')+'</span>'; }
+function brandPill(p){ return '<span class="brand-pill">'+esc(p||'-')+'</span>'; }
 function dot(ok){ return '<span class="dot '+(ok?'ok':'off')+'"></span>' }
 
 
@@ -344,7 +337,7 @@ function thSort(group, key, label){
   const cls = 'sortable' + (s.k===key ? (s.d>0?' asc':' desc') : '');
   return '<th class="'+cls+'" onclick="sortBy(\''+group+'\',\''+key+'\')">'+esc(label)+'</th>';
 }
-function emptyState(msg){ return '<div class="empty"><div class="em-icon">📭</div>'+esc(msg)+'</div>'; }
+function emptyState(msg){ return '<div class="empty">'+esc(msg)+'</div>'; }
 
 
 // 仪表盘
@@ -401,15 +394,39 @@ function renderModels(){
       '<td class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.api_url)+'">'+esc(r.api_url)+'</td>'+
       '<td>'+esc(r.max_tokens||'-')+'</td>'+
       '<td>'+esc(r.temperature ?? '-')+'</td>'+
-      '<td style="white-space:nowrap"><button class="btn ghost sm" onclick=\'openModelDialog('+JSON.stringify(r).replace(/'/g,"&#39;")+')\'>编辑</button> <button class="btn ghost sm" onclick="deleteModel('+r.id+',\''+esc(r.provider+'/'+r.name).replace(/'/g,"\\'")+'\')">删除</button></td>'+
+      '<td style="white-space:nowrap"><button class="btn ghost sm" data-act="edit-model" data-id="'+r.id+'">编辑</button> <button class="btn ghost sm" data-act="del-model" data-id="'+r.id+'">删除</button></td>'+
     '</tr>').join('') + '</tbody></table></div>';
 }
+function editModelById(id){
+  const m = state.data.models.find(x => x.id === id);
+  if(!m){ toast('模型不存在，已自动刷新','warn'); loadModels(); return; }
+  openModelDialog(m);
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if(!btn) return;
+  const id = Number(btn.dataset.id);
+  switch(btn.dataset.act){
+    case 'edit-model': editModelById(id); break;
+    case 'del-model': {
+      const m = state.data.models.find(x => x.id === id);
+      deleteModel(id, m ? m.provider+'/'+m.name : '#'+id);
+      break;
+    }
+    case 'del-token': {
+      const t = state.data.tokens.find(x => x.id === id);
+      deleteToken(id, t ? (t.name || t.token || '#'+id) : '#'+id);
+      break;
+    }
+    case 'activate-prompt': activatePrompt(id); break;
+  }
+});
 function openModelDialog(initial){
   const m = initial || {};
   const isEdit = !!initial;
   const host = $('modal-host');
   const url = m.api_url || '';
-  const urlHint = url && !/\/chat\/completions(\?|$)/.test(url) ? '⚠ 通常应以 /chat/completions 结尾' : '';
+  const urlHint = url && !/\/chat\/completions(\?|$)/.test(url) ? '提示：通常应以 /chat/completions 结尾' : '';
   host.innerHTML =
     '<div class="modal-bd"><div class="modal" style="width:min(640px,92vw)">'+
       '<div class="m-h">'+(isEdit?'编辑模型':'新建模型')+'</div>'+
@@ -439,7 +456,7 @@ function openModelDialog(initial){
     '</div></div>';
   $('d_api_url').addEventListener('input', e=>{
     const v = e.target.value;
-    $('d_url_hint').textContent = v && !/\/chat\/completions(\?|$)/.test(v) ? '⚠ 通常应以 /chat/completions 结尾' : '';
+    $('d_url_hint').textContent = v && !/\/chat\/completions(\?|$)/.test(v) ? '提示：通常应以 /chat/completions 结尾' : '';
   });
   const close = ()=>{ host.innerHTML=''; document.removeEventListener('keydown', onKey); };
   const onKey = e => {
@@ -503,7 +520,7 @@ function renderTokens(){
       '<td><span class="pill">'+dot(r.enabled)+(r.enabled?'启用':'禁用')+'</span></td>'+
       '<td>'+(r.request_count||0)+'</td>'+
       '<td title="'+esc(r.last_used_at||'')+'" class="muted">'+esc(r.last_used_at?relTime(r.last_used_at):'未使用')+'</td>'+
-      '<td><button class="btn ghost sm" onclick="deleteToken('+r.id+',\''+esc(r.name||r.token).replace(/'/g,"\\'")+'\')">删除</button></td>'+
+      '<td><button class="btn ghost sm" data-act="del-token" data-id="'+r.id+'">删除</button></td>'+
     '</tr>').join('') + '</tbody></table></div>';
 }
 async function createToken(){
@@ -537,7 +554,7 @@ function renderPrompts(){
       '<td>'+esc(r.name)+'</td>'+
       '<td>'+(r.active?'<span class="pill" style="border-color:var(--success);color:var(--success)">'+dot(true)+'当前</span>':'<span class="pill muted">'+dot(false)+'历史</span>')+'</td>'+
       '<td><pre>'+esc((r.template||'').slice(0,300))+(r.template && r.template.length>300?'...':'')+'</pre></td>'+
-      '<td>'+(r.active?'':'<button class="btn ghost sm" onclick="activatePrompt('+r.id+')">启用</button>')+'</td>'+
+      '<td>'+(r.active?'':'<button class="btn ghost sm" data-act="activate-prompt" data-id="'+r.id+'">启用</button>')+'</td>'+
     '</tr>').join('') + '</tbody></table></div>';
 }
 async function createPrompt(){
@@ -573,7 +590,7 @@ async function tryTranslate(){
   let provider='', model='';
   if(sel){ const parts = sel.split('/'); provider = parts[0]; model = parts.slice(1).join('/'); }
   const btn = $('tr_btn'); btn.disabled = true; btn.textContent = '翻译中…';
-  $('tr_result').innerHTML = '<div class="tr-result muted">⏳ 翻译中...</div>';
+  $('tr_result').innerHTML = '<div class="tr-result muted">翻译中...</div>';
   const t0 = performance.now();
   try{
     const r = await req('/translate',{method:'POST',body:JSON.stringify({
@@ -583,8 +600,8 @@ async function tryTranslate(){
     $('tr_result').innerHTML =
       '<div class="tr-result"><pre>'+esc(r.translation)+'</pre>'+
       '<div class="tr-meta">'+
-        '<span>🕐 服务端 '+r.elapsed_ms+' ms</span>'+
-        '<span>🌐 端到端 '+ms+' ms</span>'+
+        '<span>服务端 '+r.elapsed_ms+' ms</span>'+
+        '<span>端到端 '+ms+' ms</span>'+
         '<span>'+esc(r.source_lang||'?')+' → '+esc(r.target_lang||'?')+'</span>'+
         (r.used_provider?'<span>'+brandPill(r.used_provider)+' '+esc(r.used_model||'')+'</span>':'')+
       '</div></div>';
