@@ -14,12 +14,16 @@ type Handler struct {
 	authTokens         map[string]bool // 存储有效的 API 密钥
 	promptTemplate     string          // 👈 新增
 	maxConcurrent      int             // 批量接口最大并发
+	authValidator      func(*http.Request, string) bool
+	promptProvider     func(*http.Request) string
 }
 
 type HandlerConfig struct {
 	AuthTokens     []string // 配置中的 API 密钥列表
 	PromptTemplate string
 	MaxConcurrent  int // 批量接口最大并发（可选）
+	AuthValidator  func(*http.Request, string) bool
+	PromptProvider func(*http.Request) string
 }
 
 func NewHandler(translationService *service.TranslationService, config HandlerConfig) *Handler {
@@ -34,6 +38,8 @@ func NewHandler(translationService *service.TranslationService, config HandlerCo
 		authTokens:         authTokens,
 		promptTemplate:     config.PromptTemplate, // 👈 设置进去
 		maxConcurrent:      config.MaxConcurrent,
+		authValidator:      config.AuthValidator,
+		promptProvider:     config.PromptProvider,
 	}
 }
 
@@ -50,7 +56,7 @@ func (h *Handler) HandleTranslation(w http.ResponseWriter, r *http.Request) {
 		apiKey = r.URL.Query().Get("token") // 支持 URL 参数方式传递 API 密钥
 	}
 
-	if !h.authTokens[apiKey] {
+	if !h.isTokenAuthorized(r, apiKey, "translate") {
 		h.sendError(w, "Invalid API key", "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -68,7 +74,7 @@ func (h *Handler) HandleTranslation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 使用翻译服务处理请求
-	translation, err := h.translationService.Translate(r.Context(), "", "", h.promptTemplate, req.Text, req.SourceLang, req.TargetLang)
+	translation, err := h.translationService.Translate(r.Context(), "", "", h.currentPromptTemplate(r), req.Text, req.SourceLang, req.TargetLang)
 	if err != nil {
 		h.sendError(w, "Translation failed", "translation_failed", http.StatusInternalServerError)
 		return
@@ -76,6 +82,20 @@ func (h *Handler) HandleTranslation(w http.ResponseWriter, r *http.Request) {
 
 	// 发送响应
 	h.sendResponse(w, translation, req.SourceLang, req.TargetLang)
+}
+
+func (h *Handler) currentPromptTemplate(r *http.Request) string {
+	if h.promptProvider != nil {
+		return h.promptProvider(r)
+	}
+	return h.promptTemplate
+}
+
+func (h *Handler) isTokenAuthorized(r *http.Request, token string, scope string) bool {
+	if h.authValidator != nil {
+		return h.authValidator(r, scope)
+	}
+	return h.authTokens[token]
 }
 
 // validateRequest 验证请求参数

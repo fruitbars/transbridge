@@ -13,6 +13,9 @@ TransBridge 是一个强大的翻译 API 代理服务，通过调用各种大模
 - **API 兼容**：提供简化 `/translate`、DeepL v2 风格 `/deepl/v2/translate` 和沉浸式翻译批量接口
 - **认证安全**：支持 API 密钥认证
 - **日志记录**：异步日志系统，支持自动轮转
+- **本地管理后台**：支持模型、Token、Prompt 版本、请求统计和历史日志管理
+- **SQLite 持久化**：管理后台数据、统计数据和审计数据重启后保留
+- **翻译质量防护**：跳过数据/单位/化学式等不应翻译内容，异常模型输出不写入缓存
 - **高性能设计**：异步日志、缓存优化等提升性能
 - **跨平台**：支持 Linux、macOS 和 Windows
 
@@ -132,6 +135,18 @@ prompt:
 transapi:
   tokens:
     - "your-api-key"
+
+storage:
+  enabled: true
+  type: "sqlite"
+  path: "data/transbridge.db"
+
+admin:
+  enabled: true
+  path: "/admin"
+  username: "admin"
+  password: "change-me"
+  local_only: true
 
 log:
   enabled: true

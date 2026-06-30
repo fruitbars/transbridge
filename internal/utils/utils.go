@@ -29,6 +29,23 @@ func GenerateCacheKey(text, sourceLang, targetLang string) string {
 	return "transbridge:" + md5string
 }
 
+// GenerateModelCacheKey 生成模型级缓存键，避免不同模型/上游之间互相污染。
+func GenerateModelCacheKey(provider, model, text, sourceLang, targetLang string) string {
+	key := strings.Join([]string{
+		provider,
+		model,
+		sourceLang,
+		targetLang,
+		text,
+	}, ":")
+
+	hasher := md5.New()
+	hasher.Write([]byte(key))
+	md5string := hex.EncodeToString(hasher.Sum(nil))
+
+	return "transbridge:v2:" + md5string
+}
+
 // IsValidLanguageCode 检查语言代码是否有效
 func IsValidLanguageCode(code string) bool {
 

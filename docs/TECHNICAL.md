@@ -22,8 +22,11 @@ TransBridge 是一个轻量级翻译 API 代理。核心目标是把多个 OpenA
 ├── api/
 │   ├── deeplx/translate_handler/    # /translate、/deepl/v2/translate 和 /immersivel 接口
 │   └── openai/                      # /v1/chat/completions 和 /v1/models
+├── admin/                           # 内置 Web 管理后台和 /admin/api/*
 ├── service/
-│   └── translation.go               # 翻译业务编排：缓存、模型选择、日志
+│   ├── translation.go               # 翻译业务编排：策略、缓存、模型选择、日志
+│   ├── policy.go                    # 翻译前分类：跳过/词典/模型
+│   └── quality.go                   # 模型输出质量门禁，避免缓存污染
 ├── translator/
 │   ├── translator.go                # Translator 接口
 │   ├── openai.go                    # OpenAI-compatible 上游实现
@@ -42,6 +45,8 @@ TransBridge 是一个轻量级翻译 API 代理。核心目标是把多个 OpenA
 │   └── utils/                       # 缓存 key、提示词模板、语言工具
 ├── logger/
 │   └── translation_logger.go        # 异步结构化翻译日志
+├── store/
+│   └── store.go                     # SQLite 迁移、模型/token/prompt/统计/日志持久化
 ├── docs/                            # 用户文档和技术文档
 ├── .github/workflows/               # CI 和 Release 工作流
 └── config.example.yml               # 标准示例配置
@@ -56,6 +61,8 @@ flowchart LR
     HTTP --> OAI[/v1/chat/completions / /v1/models]
     DeepL --> Service[TranslationService]
     Service --> Cache[MultiCache]
+    Service --> Policy[Translation policy]
+    Service --> Store[SQLite store]
     Service --> Manager[ModelManager]
     Manager --> Translator[OpenAITranslator]
     Translator --> Upstream[OpenAI-compatible upstream]
@@ -63,6 +70,9 @@ flowchart LR
     Cache --> Memory[Memory]
     Cache --> Bolt[bbolt]
     Cache --> Redis[Redis]
+    HTTP --> Admin[/admin / /admin/api/*]
+    Admin --> Store
+    Admin --> Manager
 ```
 
 主要请求路径有三条：
@@ -78,13 +88,15 @@ flowchart LR
 
 1. 读取 `-config` 参数，默认 `config.yml`。
 2. 使用 `config.LoadConfig` 加载 YAML。
-3. 根据 `cache.enabled` 和 `cache.types` 初始化缓存。
-4. 根据 `log.enabled` 初始化异步翻译日志。
-5. 根据 `providers` 初始化 `ModelManager`。
-6. 创建 `TranslationService`。
-7. 注册 HTTP 路由。
-8. 启动 HTTP server。
-9. 收到 `SIGINT` 或 `SIGTERM` 后优雅关闭 server、logger 和 cache。
+3. 如果启用 `storage` 或 `admin`，打开 SQLite，执行迁移，并在空库时从 YAML 导入 provider、token 和 prompt。
+4. 如果 SQLite 中已有 provider 或 active prompt，优先使用 SQLite 中的数据初始化运行时。
+5. 根据 `cache.enabled` 和 `cache.types` 初始化缓存。
+6. 根据 `log.enabled` 初始化异步翻译日志。
+7. 根据 provider 配置初始化 `ModelManager`。
+8. 创建 `TranslationService`，并挂接 SQLite 请求日志。
+9. 注册 HTTP 路由和可选管理后台路由。
+10. 启动 HTTP server。
+11. 收到 `SIGINT` 或 `SIGTERM` 后优雅关闭 server、logger、cache 和 SQLite。
 
 HTTP server 当前固定超时：
 
@@ -157,23 +169,57 @@ cache:
 HTTP handler
   -> validate method/auth/body
   -> TranslationService.Translate(ctx, ...)
-      -> generate cache key
-      -> try cache
+      -> apply translation policy
       -> select translator by weight
+      -> generate provider/model scoped cache key
+      -> try cache and validate cached value
       -> apply prompt template
       -> call upstream OpenAI-compatible API
-      -> write cache
+      -> validate model output
+      -> write cache only when cacheable
       -> enqueue translation log
+      -> write SQLite request log when enabled
   -> JSON response
 ```
 
 关键点：
 
-- 缓存 key 基于 `source_lang + target_lang + text` 生成。
+- 新缓存 key 基于 `provider + model + source_lang + target_lang + text` 生成。
+- 旧缓存 key 仍可兼容读取，但命中后会经过质量门禁，不合格会忽略并重翻。
 - `prompt.template` 必须包含 `{{input}}`。
 - `source_lang` 和 `target_lang` 会转换成语言名称后注入提示词。
 - `TranslationService` 会把 request context 传到 translator，上游 HTTP 请求支持取消和超时。
 - 如果缓存中存在旧拼写前缀 `transbrige:` 的 key，会尝试兼容读取。
+
+## 翻译策略层
+
+`service/policy.go` 在调用模型前做保守分类：
+
+- `skip`：空白、数字、百分比、引用、URL、email、单位、复合单位、化学式、离子式、物种名、基因/蛋白符号、日期金额、罗马数字、单字母、短 acronym 等直接返回原文。
+- `dictionary`：中文目标语言下的高置信短词直接确定性翻译，例如 `total -> 总计`、`control -> 对照`。
+- `model`：普通短语和长文本进入模型翻译。
+
+这个策略故意保守。对于 `In`、`He`、`Be`、`No` 这类容易同时是元素符号和普通词的短 token，默认不交给模型，避免模型扩写解释。
+
+`service/quality.go` 在缓存写入前做输出门禁。明显的解释性、拒答、要求补充文本、语言参数说明、碎片化助手话术不会写入缓存。调用方仍会收到模型原始输出，方便发现问题，但缓存不会被污染。
+
+## SQLite Store 和管理后台
+
+`store.Store` 使用 `modernc.org/sqlite`，不需要 CGO。当前表：
+
+- `providers`：provider 级 API URL、API key、timeout、默认标记和限流。
+- `models`：模型名称、权重、生成参数、限流、启用状态。
+- `tokens`：访问 token、scope、启用状态、调用次数和最近使用时间。
+- `prompt_versions`：prompt 历史版本和 active 标记。
+- `request_logs`：请求统计、模型、缓存命中、耗时、错误信息。
+
+管理后台在 `admin/` 包中，使用内置 HTML，不需要前端构建。模型新增、修改、删除后会调用 `ModelManager.Reload`，用 SQLite 中的 provider 配置原子替换运行时模型集合。
+
+认证和 prompt 在启用 SQLite 后变为动态读取：
+
+- 翻译接口 token 从 `tokens` 表校验，scope 支持 `translate` 和 `all`。
+- OpenAI-compatible 接口 token 从 `tokens` 表校验，scope 支持 `openai` 和 `all`。
+- prompt 每次请求读取 active prompt；读取失败时回退启动时配置。
 
 ## OpenAI-compatible 代理链路
 

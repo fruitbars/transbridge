@@ -1,0 +1,383 @@
+package admin
+
+import (
+	"context"
+	"crypto/subtle"
+	"encoding/json"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"transbridge/config"
+	"transbridge/store"
+	"transbridge/translator"
+)
+
+type Handler struct {
+	store        *store.Store
+	cfg          *config.Config
+	modelManager *translator.ModelManager
+	basePath     string
+}
+
+func NewHandler(st *store.Store, cfg *config.Config, modelManager *translator.ModelManager) *Handler {
+	basePath := cfg.Admin.Path
+	if basePath == "" {
+		basePath = "/admin"
+	}
+	basePath = "/" + strings.Trim(basePath, "/")
+	return &Handler{store: st, cfg: cfg, modelManager: modelManager, basePath: basePath}
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !h.authorized(w, r) {
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, h.basePath)
+	if path == "" || path == "/" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(indexHTML))
+		return
+	}
+	if strings.HasPrefix(path, "/api/") {
+		h.serveAPI(w, r, strings.TrimPrefix(path, "/api"))
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request, path string) {
+	w.Header().Set("Content-Type", "application/json")
+	switch {
+	case path == "/stats" && r.Method == http.MethodGet:
+		stats, err := h.store.Stats(r.Context())
+		h.write(w, stats, err)
+	case path == "/models" && r.Method == http.MethodGet:
+		models, err := h.store.ListModelViews(r.Context())
+		h.write(w, models, err)
+	case path == "/models" && r.Method == http.MethodPost:
+		h.upsertModel(w, r)
+	case path == "/models" && r.Method == http.MethodDelete:
+		h.deleteModel(w, r)
+	case path == "/tokens" && r.Method == http.MethodGet:
+		tokens, err := h.store.ListTokenViews(r.Context())
+		h.write(w, tokens, err)
+	case path == "/tokens" && r.Method == http.MethodPost:
+		h.createToken(w, r)
+	case path == "/tokens" && r.Method == http.MethodPut:
+		h.updateToken(w, r)
+	case path == "/tokens" && r.Method == http.MethodDelete:
+		h.deleteToken(w, r)
+	case path == "/prompts" && r.Method == http.MethodGet:
+		prompts, err := h.store.ListPrompts(r.Context())
+		h.write(w, prompts, err)
+	case path == "/prompts" && r.Method == http.MethodPost:
+		h.createPrompt(w, r)
+	case path == "/prompts/activate" && r.Method == http.MethodPost:
+		h.activatePrompt(w, r)
+	case path == "/logs" && r.Method == http.MethodGet:
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		logs, err := h.store.ListRequestLogs(r.Context(), limit)
+		h.write(w, logs, err)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (h *Handler) upsertModel(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Provider          string         `json:"provider"`
+		APIURL            string         `json:"api_url"`
+		APIKey            string         `json:"api_key"`
+		ProviderTimeout   int            `json:"provider_timeout"`
+		IsDefault         bool           `json:"is_default"`
+		Name              string         `json:"name"`
+		Weight            int            `json:"weight"`
+		TopP              int            `json:"top_p"`
+		MaxTokens         int            `json:"max_tokens"`
+		Temperature       float32        `json:"temperature"`
+		Timeout           *int           `json:"timeout"`
+		Enabled           bool           `json:"enabled"`
+		RateLimit         store.RateSpec `json:"rate_limit"`
+		ProviderRateLimit store.RateSpec `json:"provider_rate_limit"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Provider == "" || req.APIURL == "" || req.Name == "" {
+		h.errorText(w, http.StatusBadRequest, "provider, api_url and name are required")
+		return
+	}
+	if req.Provider != "openai" {
+		h.errorText(w, http.StatusBadRequest, "only openai-compatible provider is supported")
+		return
+	}
+	if req.ProviderTimeout <= 0 {
+		req.ProviderTimeout = 60
+	}
+	if !req.Enabled {
+		if ok := h.canDisableModel(w, r, req.Provider, req.APIURL, req.Name); !ok {
+			return
+		}
+	}
+	if req.Weight == 0 {
+		req.Weight = 1
+	}
+	if req.MaxTokens == 0 {
+		req.MaxTokens = 2000
+	}
+	if req.Temperature == 0 {
+		req.Temperature = 0.3
+	}
+	provider := config.ProviderConfig{
+		Provider:  req.Provider,
+		APIURL:    req.APIURL,
+		APIKey:    req.APIKey,
+		Timeout:   req.ProviderTimeout,
+		IsDefault: req.IsDefault,
+		RateLimit: config.RateLimitConfig{
+			MaxConcurrent: req.ProviderRateLimit.MaxConcurrent,
+			QPS:           req.ProviderRateLimit.QPS,
+			QPM:           req.ProviderRateLimit.QPM,
+		},
+	}
+	model := config.ModelConfig{
+		Name:        req.Name,
+		Weight:      req.Weight,
+		TopP:        req.TopP,
+		MaxTokens:   req.MaxTokens,
+		Temperature: req.Temperature,
+		Timeout:     req.Timeout,
+		RateLimit: config.RateLimitConfig{
+			MaxConcurrent: req.RateLimit.MaxConcurrent,
+			QPS:           req.RateLimit.QPS,
+			QPM:           req.RateLimit.QPM,
+		},
+	}
+	if err := h.store.UpsertProviderModel(r.Context(), provider, model, req.Enabled); err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+	h.reloadModels(w, r.Context())
+}
+
+func (h *Handler) deleteModel(w http.ResponseWriter, r *http.Request) {
+	if !h.canDeleteModel(w, r) {
+		return
+	}
+	var err error
+	if idText := r.URL.Query().Get("id"); idText != "" {
+		id, parseErr := strconv.ParseInt(idText, 10, 64)
+		if parseErr != nil {
+			h.error(w, http.StatusBadRequest, parseErr)
+			return
+		}
+		err = h.store.DeleteModel(r.Context(), id)
+	} else {
+		err = h.store.DeleteModelByName(r.Context(), r.URL.Query().Get("provider"), r.URL.Query().Get("api_url"), r.URL.Query().Get("model"))
+	}
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+	h.reloadModels(w, r.Context())
+}
+
+func (h *Handler) canDeleteModel(w http.ResponseWriter, r *http.Request) bool {
+	models, err := h.store.ListModels(r.Context())
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return false
+	}
+	enabledCount := 0
+	for _, model := range models {
+		if model.Enabled {
+			enabledCount++
+		}
+	}
+	for _, model := range models {
+		matches := false
+		if idText := r.URL.Query().Get("id"); idText != "" {
+			id, err := strconv.ParseInt(idText, 10, 64)
+			if err != nil {
+				h.error(w, http.StatusBadRequest, err)
+				return false
+			}
+			matches = model.ID == id
+		} else {
+			matches = model.Provider == r.URL.Query().Get("provider") && model.APIURL == r.URL.Query().Get("api_url") && model.Name == r.URL.Query().Get("model")
+		}
+		if matches && model.Enabled && enabledCount <= 1 {
+			h.errorText(w, http.StatusBadRequest, "cannot delete the last enabled model")
+			return false
+		}
+	}
+	return true
+}
+
+func (h *Handler) canDisableModel(w http.ResponseWriter, r *http.Request, provider, apiURL, name string) bool {
+	models, err := h.store.ListModels(r.Context())
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return false
+	}
+	enabledCount := 0
+	for _, model := range models {
+		if model.Enabled {
+			enabledCount++
+		}
+	}
+	for _, model := range models {
+		if model.Provider == provider && model.APIURL == apiURL && model.Name == name && model.Enabled && enabledCount <= 1 {
+			h.errorText(w, http.StatusBadRequest, "cannot disable the last enabled model")
+			return false
+		}
+	}
+	return true
+}
+
+func (h *Handler) reloadModels(w http.ResponseWriter, ctx context.Context) {
+	providers, err := h.store.LoadProviders(ctx)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := h.modelManager.Reload(providers); err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	h.write(w, map[string]string{"status": "ok"}, nil)
+}
+
+func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name    string `json:"name"`
+		Token   string `json:"token"`
+		Scope   string `json:"scope"`
+		Enabled *bool  `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Token == "" {
+		h.errorText(w, http.StatusBadRequest, "token is required")
+		return
+	}
+	if req.Scope == "" {
+		req.Scope = "translate"
+	}
+	if !validTokenScope(req.Scope) {
+		h.errorText(w, http.StatusBadRequest, "invalid token scope")
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	h.write(w, map[string]string{"status": "ok"}, h.store.CreateToken(r.Context(), store.Token{
+		Name:    req.Name,
+		Token:   req.Token,
+		Scope:   req.Scope,
+		Enabled: enabled,
+	}))
+}
+
+func (h *Handler) updateToken(w http.ResponseWriter, r *http.Request) {
+	var token store.Token
+	if err := json.NewDecoder(r.Body).Decode(&token); err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	if token.ID == 0 || token.Token == "" {
+		h.errorText(w, http.StatusBadRequest, "id and token are required")
+		return
+	}
+	if !validTokenScope(token.Scope) {
+		h.errorText(w, http.StatusBadRequest, "invalid token scope")
+		return
+	}
+	h.write(w, map[string]string{"status": "ok"}, h.store.UpdateToken(r.Context(), token))
+}
+
+func (h *Handler) deleteToken(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	h.write(w, map[string]string{"status": "ok"}, h.store.DeleteToken(r.Context(), id))
+}
+
+func (h *Handler) createPrompt(w http.ResponseWriter, r *http.Request) {
+	var prompt store.PromptVersion
+	if err := json.NewDecoder(r.Body).Decode(&prompt); err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	if prompt.Template == "" {
+		h.errorText(w, http.StatusBadRequest, "template is required")
+		return
+	}
+	h.write(w, map[string]string{"status": "ok"}, h.store.CreatePrompt(r.Context(), prompt))
+}
+
+func (h *Handler) activatePrompt(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	h.write(w, map[string]string{"status": "ok"}, h.store.ActivatePrompt(r.Context(), id))
+}
+
+func (h *Handler) authorized(w http.ResponseWriter, r *http.Request) bool {
+	if h.cfg.Admin.LocalOnly && !isLocal(r.RemoteAddr) {
+		http.Error(w, "admin is local only", http.StatusForbidden)
+		return false
+	}
+	if h.cfg.Admin.Username == "" && h.cfg.Admin.Password == "" {
+		return true
+	}
+	user, pass, ok := r.BasicAuth()
+	if !ok ||
+		subtle.ConstantTimeCompare([]byte(user), []byte(h.cfg.Admin.Username)) != 1 ||
+		subtle.ConstantTimeCompare([]byte(pass), []byte(h.cfg.Admin.Password)) != 1 {
+		w.Header().Set("WWW-Authenticate", `Basic realm="transbridge admin"`)
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+func isLocal(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func validTokenScope(scope string) bool {
+	return scope == "translate" || scope == "openai" || scope == "all"
+}
+
+func (h *Handler) write(w http.ResponseWriter, data any, err error) {
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) error(w http.ResponseWriter, status int, err error) {
+	h.errorText(w, status, err.Error())
+}
+
+func (h *Handler) errorText(w http.ResponseWriter, status int, message string) {
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+}

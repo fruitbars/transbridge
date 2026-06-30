@@ -14,6 +14,8 @@ type Config struct {
 	OpenAI    OpenAIConfig     `yaml:"openai"`   // 新增 OpenAI 配置
 	TransAPI  TransAPI         `yaml:"transapi"` // 新增认证配置
 	Log       LogConfig        `yaml:"log"`      // 新增日志配置
+	Storage   StorageConfig    `yaml:"storage"`  // 管理后台持久化配置
+	Admin     AdminConfig      `yaml:"admin"`    // 本地管理后台配置
 }
 
 // LogConfig 日志配置
@@ -106,6 +108,14 @@ type StorageConfig struct {
 	Type     string `yaml:"type"`      // 存储类型，如 "sqlite"
 	Path     string `yaml:"path"`      // SQLite 数据库文件路径
 	LogLevel string `yaml:"log_level"` // 日志级别：none, error, warn, info, debug
+}
+
+type AdminConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	LocalOnly bool   `yaml:"local_only"`
 }
 
 type TransAPI struct {

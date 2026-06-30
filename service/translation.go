@@ -10,6 +10,7 @@ import (
 	"transbridge/cache"
 	"transbridge/internal/utils"
 	"transbridge/logger"
+	"transbridge/store"
 	"transbridge/translator"
 )
 
@@ -18,6 +19,7 @@ type TranslationService struct {
 	modelManager *translator.ModelManager
 	cache        cache.Cache
 	logger       *logger.TranslationLogger // 新增日志记录器
+	store        *store.Store
 }
 
 // TranslateRequest 翻译请求参数
@@ -27,6 +29,10 @@ type TranslateRequest struct {
 	TargetLang string
 	Provider   string // 可选，指定服务提供商
 	Model      string // 可选，指定模型
+}
+
+func (s *TranslationService) SetStore(st *store.Store) {
+	s.store = st
 }
 
 // NewTranslationService 创建翻译服务实例
@@ -51,32 +57,11 @@ func (s *TranslationService) Translate(ctx context.Context, provider, model, pro
 
 	startTime := time.Now()
 
-	// 2. 尝试从缓存获取（并兼容旧前缀 transbrige:）
-	if s.cache != nil {
-		cacheKey = utils.GenerateCacheKey(text, sourceLang, targetLang)
-		if cachedData, err := s.cache.Get(ctx, cacheKey); err == nil && cachedData != "" {
-			var entry cache.CacheEntry
-			if err := json.Unmarshal([]byte(cachedData), &entry); err == nil {
-				log.Printf("Cache hit for: %s, originally translated by %s, models : %s",
-					cacheKey, entry.APIURL, entry.Model)
-				s.logTranslation(text, entry.Translation, sourceLang, targetLang, entry.APIURL, entry.Provider, entry.Model, cacheKey, true, time.Since(startTime).Milliseconds())
-				return entry.Translation, nil
-			}
-		} else {
-			// 向后兼容旧键前缀
-			fallbackKey := strings.Replace(cacheKey, "transbridge:", "transbrige:", 1)
-			if fallbackKey != cacheKey {
-				if cachedData2, err2 := s.cache.Get(ctx, fallbackKey); err2 == nil && cachedData2 != "" {
-					var entry2 cache.CacheEntry
-					if err := json.Unmarshal([]byte(cachedData2), &entry2); err == nil {
-						log.Printf("Cache hit (legacy key) for: %s, originally translated by %s/%s",
-							fallbackKey, entry2.APIURL, entry2.Model)
-						s.logTranslation(text, entry2.Translation, sourceLang, targetLang, entry2.APIURL, entry2.Provider, entry2.Model, fallbackKey, true, time.Since(startTime).Milliseconds())
-						return entry2.Translation, nil
-					}
-				}
-			}
-		}
+	policy := applyTranslationPolicy(text, targetLang)
+	if policy.Decision == decisionSkip || policy.Decision == decisionDict {
+		s.logTranslation(text, policy.Output, sourceLang, targetLang, "", string(policy.Decision), policy.Reason, "", false, time.Since(startTime).Milliseconds())
+		s.logRequest(ctx, text, policy.Output, sourceLang, targetLang, "", string(policy.Decision), "", false, true, "", time.Since(startTime).Milliseconds())
+		return policy.Output, nil
 	}
 
 	var usedTranslator translator.Translator
@@ -92,16 +77,61 @@ func (s *TranslationService) Translate(ctx context.Context, provider, model, pro
 		usedTranslator = s.modelManager.GetRandomModel()
 	}
 
+	// 2. 尝试从缓存获取（优先模型级 key，并兼容旧 key 和旧前缀 transbrige:）
+	if s.cache != nil {
+		cacheKey = utils.GenerateModelCacheKey(usedTranslator.GetProvider(), usedTranslator.GetModel(), text, sourceLang, targetLang)
+		if cachedData, err := s.cache.Get(ctx, cacheKey); err == nil && cachedData != "" {
+			var entry cache.CacheEntry
+			if err := json.Unmarshal([]byte(cachedData), &entry); err == nil && shouldCacheTranslation(text, entry.Translation) {
+				log.Printf("Cache hit for: %s, originally translated by %s, models : %s",
+					cacheKey, entry.APIURL, entry.Model)
+				s.logTranslation(text, entry.Translation, sourceLang, targetLang, entry.APIURL, entry.Provider, entry.Model, cacheKey, true, time.Since(startTime).Milliseconds())
+				s.logRequest(ctx, text, entry.Translation, sourceLang, targetLang, entry.APIURL, entry.Provider, entry.Model, true, true, "", time.Since(startTime).Milliseconds())
+				return entry.Translation, nil
+			}
+		}
+
+		legacyKey := utils.GenerateCacheKey(text, sourceLang, targetLang)
+		if cachedData, err := s.cache.Get(ctx, legacyKey); err == nil && cachedData != "" {
+			var entry cache.CacheEntry
+			if err := json.Unmarshal([]byte(cachedData), &entry); err == nil && shouldCacheTranslation(text, entry.Translation) {
+				log.Printf("Legacy cache hit for: %s, originally translated by %s, models : %s",
+					legacyKey, entry.APIURL, entry.Model)
+				s.logTranslation(text, entry.Translation, sourceLang, targetLang, entry.APIURL, entry.Provider, entry.Model, legacyKey, true, time.Since(startTime).Milliseconds())
+				s.logRequest(ctx, text, entry.Translation, sourceLang, targetLang, entry.APIURL, entry.Provider, entry.Model, true, true, "", time.Since(startTime).Milliseconds())
+				return entry.Translation, nil
+			}
+		} else {
+			// 向后兼容旧键前缀
+			fallbackKey := strings.Replace(legacyKey, "transbridge:", "transbrige:", 1)
+			if fallbackKey != legacyKey {
+				if cachedData2, err2 := s.cache.Get(ctx, fallbackKey); err2 == nil && cachedData2 != "" {
+					var entry2 cache.CacheEntry
+					if err := json.Unmarshal([]byte(cachedData2), &entry2); err == nil && shouldCacheTranslation(text, entry2.Translation) {
+						log.Printf("Cache hit (legacy key) for: %s, originally translated by %s/%s",
+							fallbackKey, entry2.APIURL, entry2.Model)
+						s.logTranslation(text, entry2.Translation, sourceLang, targetLang, entry2.APIURL, entry2.Provider, entry2.Model, fallbackKey, true, time.Since(startTime).Milliseconds())
+						s.logRequest(ctx, text, entry2.Translation, sourceLang, targetLang, entry2.APIURL, entry2.Provider, entry2.Model, true, true, "", time.Since(startTime).Milliseconds())
+						return entry2.Translation, nil
+					}
+				}
+			}
+		}
+	}
+
 	// 3. 执行翻译
 	translation, err := usedTranslator.Translate(ctx, promptTemplate, text, sourceLang, targetLang)
 	if err != nil {
 		// 记录失败的翻译
+		s.logRequest(ctx, text, "", sourceLang, targetLang, usedTranslator.GetAPIURL(), usedTranslator.GetProvider(), usedTranslator.GetModel(), false, false, err.Error(), time.Since(startTime).Milliseconds())
 		return "", fmt.Errorf("translation failed with %s/%s: %w",
 			usedTranslator.GetAPIURL(), usedTranslator.GetModel(), err)
 	}
 
-	// 4. 缓存成功的翻译结果（包含模型信息）
-	if s.cache != nil {
+	translationCacheable := shouldCacheTranslation(text, translation)
+
+	// 4. 缓存成功且通过质量门禁的翻译结果（包含模型信息）
+	if s.cache != nil && translationCacheable {
 		cacheEntry := cache.CacheEntry{
 			Translation: translation,
 			Provider:    usedTranslator.GetProvider(),
@@ -112,16 +142,19 @@ func (s *TranslationService) Translate(ctx context.Context, provider, model, pro
 		// 序列化缓存条目
 		cacheData, err := json.Marshal(cacheEntry)
 		if err == nil {
-			cacheKey = utils.GenerateCacheKey(text, sourceLang, targetLang)
+			cacheKey = utils.GenerateModelCacheKey(usedTranslator.GetProvider(), usedTranslator.GetModel(), text, sourceLang, targetLang)
 			// 让底层缓存实现使用其默认 TTL（传 0）或永久（由实现决定）
 			if err := s.cache.Set(ctx, cacheKey, string(cacheData), 0); err != nil {
 				log.Printf("Failed to cache translation: %v", err)
 			}
 		}
+	} else if !translationCacheable {
+		log.Printf("Skipped caching unusable translation for %s/%s", usedTranslator.GetProvider(), usedTranslator.GetModel())
 	}
 
 	// 记录翻译
 	s.logTranslation(text, translation, sourceLang, targetLang, usedTranslator.GetAPIURL(), usedTranslator.GetProvider(), usedTranslator.GetModel(), cacheKey, false, time.Since(startTime).Milliseconds())
+	s.logRequest(ctx, text, translation, sourceLang, targetLang, usedTranslator.GetAPIURL(), usedTranslator.GetProvider(), usedTranslator.GetModel(), false, true, "", time.Since(startTime).Milliseconds())
 
 	return translation, nil
 }
@@ -181,6 +214,29 @@ func (s *TranslationService) logTranslation(sourceText, targetText, sourceLang, 
 
 	if err := s.logger.LogTranslation(record); err != nil {
 		log.Printf("Failed to log translation: %v", err)
+	}
+}
+
+func (s *TranslationService) logRequest(ctx context.Context, sourceText, targetText, sourceLang, targetLang, apiURL, provider, model string, cacheHit, success bool, errText string, processTimeMs int64) {
+	if s.store == nil {
+		return
+	}
+	if err := s.store.LogRequest(ctx, store.RequestLog{
+		Timestamp:     time.Now(),
+		Endpoint:      "translate",
+		SourceLang:    sourceLang,
+		TargetLang:    targetLang,
+		Provider:      provider,
+		Model:         model,
+		APIURL:        apiURL,
+		CacheHit:      cacheHit,
+		Success:       success,
+		Error:         errText,
+		ProcessTimeMS: float64(processTimeMs),
+		SourceChars:   len([]rune(sourceText)),
+		TargetChars:   len([]rune(targetText)),
+	}); err != nil {
+		log.Printf("Failed to log request stats: %v", err)
 	}
 }
 

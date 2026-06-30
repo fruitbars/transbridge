@@ -70,7 +70,7 @@ func (h *Handler) HandleDeepLTranslation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	promptTemplate := h.deepLPromptTemplate(req)
+	promptTemplate := h.deepLPromptTemplate(r, req)
 	results := make([]DeepLTranslation, len(req.Text))
 	maxConcurrent := h.maxConcurrent
 	if maxConcurrent <= 0 {
@@ -188,8 +188,8 @@ func validateDeepLRequest(req DeepLTranslateRequest) error {
 	return nil
 }
 
-func (h *Handler) deepLPromptTemplate(req DeepLTranslateRequest) string {
-	template := h.promptTemplate
+func (h *Handler) deepLPromptTemplate(r *http.Request, req DeepLTranslateRequest) string {
+	template := h.currentPromptTemplate(r)
 	var extra []string
 	if req.Context != "" {
 		extra = append(extra, "Additional context. Use this to guide the translation, but do not translate it directly: "+req.Context)
@@ -218,7 +218,7 @@ func (h *Handler) isAuthorized(r *http.Request) bool {
 	if apiKey == "" {
 		apiKey = r.URL.Query().Get("token")
 	}
-	return h.authTokens[apiKey]
+	return h.isTokenAuthorized(r, apiKey, "translate")
 }
 
 func (h *Handler) sendDeepLError(w http.ResponseWriter, message string, status int) {

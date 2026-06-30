@@ -17,6 +17,7 @@
 ## 环境要求
 
 - 支持的操作系统：Linux, macOS, Windows
+- 从源码编译需要 Go 1.23 或更高版本
 - 内存建议：至少 512MB
 - 硬盘空间：至少 100MB
 - 单机部署推荐使用 bbolt 本地持久化缓存；多实例共享缓存时再使用 Redis
@@ -73,6 +74,18 @@ cache:
 transapi:
   tokens:
     - "your-api-key"
+
+storage:
+  enabled: true
+  type: "sqlite"
+  path: "data/transbridge.db"
+
+admin:
+  enabled: true
+  path: "/admin"
+  username: "admin"
+  password: "change-me"
+  local_only: true
 ```
 
 3. 运行服务：
@@ -80,6 +93,14 @@ transapi:
 ```bash
 ./transbridge -config config.yml
 ```
+
+如果启用了管理后台，本地访问：
+
+```text
+http://127.0.0.1:8080/admin/
+```
+
+首次启动时，SQLite 会从 YAML 导入 provider、token 和 prompt。之后在后台新增的模型、token 和 prompt 会写入 `data/transbridge.db`，重启后仍然保留。
 
 4. 验证 DeepL v2 风格接口：
 
@@ -214,6 +235,7 @@ docker run -d \
   -v $(pwd)/config.yml:/app/config.yml \
   -v $(pwd)/logs:/app/logs \
   -v $(pwd)/cache:/app/cache \
+  -v $(pwd)/data:/app/data \
   --name transbridge \
   transbridge
 

@@ -5,6 +5,9 @@
 - [服务器配置](#服务器配置)
 - [提供商配置](#提供商配置)
 - [缓存配置](#缓存配置)
+- [SQLite 存储配置](#sqlite-存储配置)
+- [管理后台配置](#管理后台配置)
+- [翻译策略与缓存质量门禁](#翻译策略与缓存质量门禁)
 - [认证配置](#认证配置)
 - [日志配置](#日志配置)
 - [完整配置示例](#完整配置示例)
@@ -193,6 +196,77 @@ cache:
 | bbolt.path | bbolt 数据库文件路径 | "cache/transbridge.db" | 否 |
 
 types 可以取值 ["memory"]、["redis"]、["bbolt"]、["memory", "bbolt"] 和 ["memory", "redis"]。
+
+## SQLite 存储配置
+
+SQLite 用于管理后台的持久化数据，包括模型配置、访问 token、prompt 版本、请求统计和历史日志。它不替代 bbolt 翻译缓存；两者职责不同：
+
+- `storage.sqlite`：管理数据、统计数据、审计数据，适合查询、分页和迁移。
+- `cache.bbolt`：翻译结果 KV 缓存，适合快速命中和 TTL 管理。
+
+```yaml
+storage:
+  enabled: true
+  type: "sqlite"
+  path: "data/transbridge.db"
+  log_level: "warn"
+```
+
+首次启动时，如果 SQLite 中还没有 provider、token 或 prompt，程序会从 YAML 导入初始配置。后续通过后台新增或修改的数据会保存在 SQLite，服务重启后仍然保留。
+
+## 管理后台配置
+
+```yaml
+admin:
+  enabled: true
+  path: "/admin"
+  username: "admin"
+  password: "change-me"
+  local_only: true
+```
+
+字段说明：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| enabled | 是否启用 Web 管理后台 | false |
+| path | 后台访问路径 | `/admin` |
+| username | Basic Auth 用户名，留空则不启用后台登录认证 | 空 |
+| password | Basic Auth 密码，留空则不启用后台登录认证 | 空 |
+| local_only | 是否只允许 loopback 地址访问后台 | true |
+
+后台启用后，可访问：
+
+```text
+http://127.0.0.1:8080/admin/
+```
+
+后台支持：
+
+- 查看实时请求统计、缓存命中、平均耗时、启用模型数。
+- 添加、更新、删除模型，并热重载模型管理器。
+- 管理 translate / openai / all scope 的 token。
+- 保存 prompt 版本并切换当前 active prompt。
+- 查询最近请求日志和失败信息。
+
+## 翻译策略与缓存质量门禁
+
+翻译服务在调用模型前会先做保守分类：
+
+- 跳过空白、纯数字、百分比、范围、引用编号、URL、email。
+- 跳过单字母、短大写缩写、常见单位、缺失值。
+- 跳过高置信化学式、离子式、复合单位、物种名、基因/蛋白/样本编号、日期和金额。
+- 中文目标语言下，对 `total`、`mean`、`control`、`treatment` 等高置信短词走内置词典。
+- 未命中词典的单个英文短词默认保留原文，不直接交给模型。
+
+模型返回结果会在写缓存前经过质量门禁。以下输出不会写入 memory/bbolt/redis 缓存：
+
+- 空输出。
+- “请提供文本”“you haven't provided the actual text” 等要求补充上下文的输出。
+- “您提供的文本是”“翻译成简体中文为”“the translation is” 等解释性输出。
+- 大量短行断裂并包含 `translate`、`provided`、`please` 等助手话术的输出。
+
+缓存 key 新版本包含 `provider + model + source_lang + target_lang + text`，避免不同模型互相污染。系统仍兼容读取旧缓存 key，但旧缓存命中后也会先经过质量门禁，不合格则忽略并重新翻译。
 
 ## 认证配置
 

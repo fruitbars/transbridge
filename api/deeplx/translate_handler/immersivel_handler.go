@@ -37,7 +37,7 @@ func (h *Handler) HandleImmersiveLTranslation(w http.ResponseWriter, r *http.Req
 	if apiKey == "" {
 		apiKey = r.URL.Query().Get("token")
 	}
-	if !h.authTokens[apiKey] {
+	if !h.isTokenAuthorized(r, apiKey, "translate") {
 		h.sendError(w, "Invalid API key", "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -93,7 +93,7 @@ func (h *Handler) HandleImmersiveLTranslation(w http.ResponseWriter, r *http.Req
 			}
 			defer func() { <-sem }()
 
-			translated, err := h.translationService.Translate(r.Context(), "", "", h.promptTemplate, t, req.SourceLang, req.TargetLang)
+			translated, err := h.translationService.Translate(r.Context(), "", "", h.currentPromptTemplate(r), t, req.SourceLang, req.TargetLang)
 			if err != nil {
 				resultChan <- result{
 					index: idx,

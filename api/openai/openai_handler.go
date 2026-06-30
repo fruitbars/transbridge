@@ -13,8 +13,9 @@ import (
 )
 
 type OpenAIHandler struct {
-	modelManager *translator.ModelManager
-	authTokens   map[string]bool
+	modelManager  *translator.ModelManager
+	authTokens    map[string]bool
+	authValidator func(*http.Request, string) bool
 }
 
 // ModelInfo 用于 API 响应的模型信息
@@ -44,11 +45,15 @@ func NewOpenAIHandler(modelManager *translator.ModelManager, authTokens []string
 	}
 }
 
+func (h *OpenAIHandler) SetAuthValidator(validator func(*http.Request, string) bool) {
+	h.authValidator = validator
+}
+
 func (h *OpenAIHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Request) {
 	// 验证 API 密钥
 	authHeader := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	if !h.authTokens[token] {
+	if !h.isAuthorized(r, token) {
 		h.sendError(w, "Unauthorized", "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -71,7 +76,7 @@ func (h *OpenAIHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Requ
 	}
 
 	// 尝试获取 OpenAI 翻译器
-	openaiTranslator, ok := model.(*translator.OpenAITranslator)
+	openaiTranslator, ok := unwrapOpenAITranslator(model)
 	if !ok {
 		h.sendError(w, fmt.Sprintf("Model %s/%s is not an OpenAI model", providerName, modelName), "invalid_model", http.StatusBadRequest)
 		return
@@ -97,7 +102,7 @@ func (h *OpenAIHandler) HandleListModels(w http.ResponseWriter, r *http.Request)
 	// 验证 API 密钥以保持与其它端点一致
 	authHeader := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	if !h.authTokens[token] {
+	if !h.isAuthorized(r, token) {
 		h.sendError(w, "Unauthorized", "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -124,6 +129,31 @@ func (h *OpenAIHandler) HandleListModels(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *OpenAIHandler) isAuthorized(r *http.Request, token string) bool {
+	if h.authValidator != nil {
+		return h.authValidator(r, "openai")
+	}
+	return h.authTokens[token]
+}
+
+type translatorUnwrapper interface {
+	Unwrap() translator.Translator
+}
+
+func unwrapOpenAITranslator(model translator.Translator) (*translator.OpenAITranslator, bool) {
+	for model != nil {
+		if openaiTranslator, ok := model.(*translator.OpenAITranslator); ok {
+			return openaiTranslator, true
+		}
+		unwrapper, ok := model.(translatorUnwrapper)
+		if !ok {
+			return nil, false
+		}
+		model = unwrapper.Unwrap()
+	}
+	return nil, false
 }
 
 // parseModelIdentifier 从模型标识符解析提供商和模型名称。

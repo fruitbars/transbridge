@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+	"transbridge/admin"
 	"transbridge/api/deeplx/translate_handler"
 	"transbridge/api/openai"
 	"transbridge/cache"
@@ -18,6 +20,7 @@ import (
 	"transbridge/internal/middleware"
 	"transbridge/logger"
 	"transbridge/service"
+	"transbridge/store"
 	"transbridge/translator"
 )
 
@@ -33,6 +36,33 @@ func main() {
 	cfg, err := config.LoadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	var adminStore *store.Store
+	if cfg.Storage.Enabled || cfg.Admin.Enabled {
+		if cfg.Storage.Type == "" {
+			cfg.Storage.Type = "sqlite"
+		}
+		if cfg.Storage.Type != "sqlite" {
+			log.Fatalf("Unsupported storage type: %s", cfg.Storage.Type)
+		}
+		adminStore, err = store.Open(cfg.Storage.Path)
+		if err != nil {
+			log.Fatalf("Failed to initialize storage: %v", err)
+		}
+		if err := adminStore.BootstrapFromConfig(context.Background(), cfg); err != nil {
+			log.Fatalf("Failed to bootstrap storage: %v", err)
+		}
+		if providers, err := adminStore.LoadProviders(context.Background()); err == nil && len(providers) > 0 {
+			cfg.Providers = providers
+		} else if err != nil {
+			log.Fatalf("Failed to load providers from storage: %v", err)
+		}
+		if prompt, err := adminStore.ActivePrompt(context.Background(), cfg.Prompt.Template); err == nil && prompt != "" {
+			cfg.Prompt.Template = prompt
+		} else if err != nil {
+			log.Fatalf("Failed to load active prompt from storage: %v", err)
+		}
 	}
 
 	// 初始化组件
@@ -72,9 +102,12 @@ func main() {
 
 	// 初始化翻译服务
 	translationService := service.NewTranslationService(modelManager, cacheImpl, translLogger)
+	if adminStore != nil {
+		translationService.SetStore(adminStore)
+	}
 
 	// 初始化 HTTP 服务器
-	server := setupServer(cfg, translationService, modelManager)
+	server := setupServer(cfg, translationService, modelManager, adminStore)
 
 	// 启动服务器
 	go func() {
@@ -111,11 +144,16 @@ func main() {
 			log.Printf("Error closing cache: %v", err)
 		}
 	}
+	if adminStore != nil {
+		if err := adminStore.Close(); err != nil {
+			log.Printf("Error closing storage: %v", err)
+		}
+	}
 
 	log.Println("Server exited")
 }
 
-func setupServer(cfg *config.Config, translationService *service.TranslationService, modelManager *translator.ModelManager) *http.Server {
+func setupServer(cfg *config.Config, translationService *service.TranslationService, modelManager *translator.ModelManager, adminStore *store.Store) *http.Server {
 	// 创建路由
 	mux := http.NewServeMux()
 
@@ -123,6 +161,8 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 	translationHandler := translate_handler.NewHandler(translationService, translate_handler.HandlerConfig{
 		AuthTokens:     cfg.TransAPI.Tokens,
 		PromptTemplate: cfg.Prompt.Template,
+		AuthValidator:  makeAuthValidator(adminStore),
+		PromptProvider: makePromptProvider(adminStore, cfg.Prompt.Template),
 	})
 
 	// 注册翻译接口
@@ -155,6 +195,7 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 	// 如果启用了 OpenAI 兼容接口，注册相关路由
 	if cfg.OpenAI.CompatibleAPI.Enabled {
 		openaiHandler := openai.NewOpenAIHandler(modelManager, cfg.OpenAI.CompatibleAPI.AuthTokens)
+		openaiHandler.SetAuthValidator(makeAuthValidator(adminStore))
 
 		basePath := cfg.OpenAI.CompatibleAPI.Path
 		if basePath == "" {
@@ -180,6 +221,20 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 		)
 	}
 
+	if cfg.Admin.Enabled {
+		if adminStore == nil {
+			log.Fatal("admin.enabled requires sqlite storage")
+		}
+		adminPath := cfg.Admin.Path
+		if adminPath == "" {
+			adminPath = "/admin"
+		}
+		adminPath = "/" + strings.Trim(adminPath, "/")
+		adminHandler := admin.NewHandler(adminStore, cfg, modelManager)
+		mux.Handle(adminPath+"/", adminHandler)
+		mux.Handle(adminPath, adminHandler)
+	}
+
 	// 健康检查
 	mux.HandleFunc("/health",
 		middleware.Chain(
@@ -198,6 +253,48 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
+	}
+}
+
+func makeAuthValidator(adminStore *store.Store) func(*http.Request, string) bool {
+	if adminStore == nil {
+		return nil
+	}
+	return func(r *http.Request, scope string) bool {
+		authHeader := r.Header.Get("Authorization")
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if strings.Contains(authHeader, " ") {
+			parts := strings.SplitN(authHeader, " ", 2)
+			token = parts[1]
+		}
+		if token == "" {
+			token = r.URL.Query().Get("token")
+		}
+		allowed, err := adminStore.TokenAllowed(r.Context(), token, scope, "all")
+		if err != nil {
+			log.Printf("Token validation failed: %v", err)
+			return false
+		}
+		if allowed {
+			adminStore.MarkTokenUsed(r.Context(), token)
+		}
+		return allowed
+	}
+}
+
+func makePromptProvider(adminStore *store.Store, fallback string) func(*http.Request) string {
+	if adminStore == nil {
+		return nil
+	}
+	return func(r *http.Request) string {
+		prompt, err := adminStore.ActivePrompt(r.Context(), fallback)
+		if err != nil || prompt == "" {
+			if err != nil {
+				log.Printf("Failed to load active prompt: %v", err)
+			}
+			return fallback
+		}
+		return prompt
 	}
 }
 

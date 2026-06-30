@@ -5,6 +5,19 @@ server:
   host: "0.0.0.0"
   port: 8080
 
+storage:
+  enabled: true
+  type: "sqlite"
+  path: "data/transbridge.db"
+  log_level: "warn"
+
+admin:
+  enabled: true
+  path: "/admin"
+  username: "admin"
+  password: "change-me"
+  local_only: true
+
 providers:
   # OpenAI, Ollama, DeepSeek, ChatGLM, vLLM, LM Studio, and other
   # OpenAI-compatible services all use provider: "openai".

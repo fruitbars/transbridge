@@ -105,6 +105,29 @@ func NewModelManager(providers []config.ProviderConfig) (*ModelManager, error) {
 	return mm, nil
 }
 
+// Reload replaces all translators atomically from the latest provider config.
+func (mm *ModelManager) Reload(providers []config.ProviderConfig) error {
+	next, err := NewModelManager(providers)
+	if err != nil {
+		return err
+	}
+
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	oldTranslators := mm.translators
+	mm.translators = next.translators
+	mm.modelWeights = next.modelWeights
+	mm.modelOrder = next.modelOrder
+	mm.defaultModel = next.defaultModel
+	mm.rng = next.rng
+
+	for _, tr := range oldTranslators {
+		_ = tr.Close()
+	}
+	return nil
+}
+
 func mergeRateLimit(providerLimit, modelLimit config.RateLimitConfig) config.RateLimitConfig {
 	merged := providerLimit
 	if modelLimit.MaxConcurrent > 0 {

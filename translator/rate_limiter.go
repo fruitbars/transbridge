@@ -48,6 +48,10 @@ func (t *rateLimitedTranslator) Close() error {
 	return t.inner.Close()
 }
 
+func (t *rateLimitedTranslator) Unwrap() Translator {
+	return t.inner
+}
+
 type upstreamLimiter struct {
 	sem chan struct{}
 
