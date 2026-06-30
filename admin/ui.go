@@ -156,26 +156,12 @@ const indexHTML = `<!doctype html>
 
       <section id="v-models" class="view">
         <div class="card">
-          <div class="card-h"><h2>新建 / 更新模型</h2></div>
-          <div class="card-b">
-            <div class="grid cols-auto">
-              <div class="field"><label>Provider</label><input id="m_provider" value="openai" placeholder="openai"></div>
-              <div class="field"><label>API URL</label><input id="m_api_url" placeholder="https://api.openai.com/v1/chat/completions"></div>
-              <div class="field"><label>API Key</label><input id="m_api_key" placeholder="sk-..."></div>
-              <div class="field"><label>模型名</label><input id="m_name" placeholder="gpt-4o-mini"></div>
-              <div class="field"><label>权重</label><input id="m_weight" type="number" value="1"></div>
-              <div class="field"><label>Provider 超时(s)</label><input id="m_timeout" type="number" value="60"></div>
-              <div class="field"><label>Max Tokens</label><input id="m_max_tokens" type="number" value="2000"></div>
-              <div class="field"><label>Temperature</label><input id="m_temperature" type="number" step="0.1" value="0.3"></div>
-              <div class="field"><label>状态</label><select id="m_enabled"><option value="true">启用</option><option value="false">禁用</option></select></div>
-              <div class="field"><label>&nbsp;</label><button class="btn" onclick="saveModel()">保存</button></div>
-            </div>
-          </div>
-        </div>
-        <div class="card">
           <div class="card-h">
             <h2>模型列表</h2>
-            <div class="toolbar"><div class="search"><input id="s-models" placeholder="搜索 provider / 模型 / URL" oninput="renderModels()"></div></div>
+            <div class="toolbar">
+              <div class="search"><input id="s-models" placeholder="搜索 provider / 模型 / URL" oninput="renderModels()"></div>
+              <button class="btn" onclick="openModelDialog()">+ 新建模型</button>
+            </div>
           </div>
           <div class="card-b flush"><div id="t-models"></div></div>
         </div>
@@ -415,24 +401,77 @@ function renderModels(){
       '<td class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.api_url)+'">'+esc(r.api_url)+'</td>'+
       '<td>'+esc(r.max_tokens||'-')+'</td>'+
       '<td>'+esc(r.temperature ?? '-')+'</td>'+
-      '<td><button class="btn ghost sm" onclick="deleteModel('+r.id+',\''+esc(r.provider+'/'+r.name).replace(/'/g,"\\'")+'\')">删除</button></td>'+
+      '<td style="white-space:nowrap"><button class="btn ghost sm" onclick=\'openModelDialog('+JSON.stringify(r).replace(/'/g,"&#39;")+')\'>编辑</button> <button class="btn ghost sm" onclick="deleteModel('+r.id+',\''+esc(r.provider+'/'+r.name).replace(/'/g,"\\'")+'\')">删除</button></td>'+
     '</tr>').join('') + '</tbody></table></div>';
 }
-async function saveModel(){
-  try{
-    if(!$('m_provider').value || !$('m_name').value || !$('m_api_url').value){ toast('provider / api_url / 模型名 必填','warn'); return; }
-    await req('/models',{method:'POST',body:JSON.stringify({
-      provider:$('m_provider').value, api_url:$('m_api_url').value, api_key:$('m_api_key').value,
-      name:$('m_name').value, weight:Number($('m_weight').value||1),
-      provider_timeout:Number($('m_timeout').value||60),
-      max_tokens:Number($('m_max_tokens').value||2000),
-      temperature:Number($('m_temperature').value||0.3),
-      enabled:$('m_enabled').value==='true',
-    })});
-    $('m_api_key').value = '';
-    toast('模型已保存','success');
-    await loadModels();
-  }catch(e){ toast(e.message,'error'); }
+function openModelDialog(initial){
+  const m = initial || {};
+  const isEdit = !!initial;
+  const host = $('modal-host');
+  const url = m.api_url || '';
+  const urlHint = url && !/\/chat\/completions(\?|$)/.test(url) ? '⚠ 通常应以 /chat/completions 结尾' : '';
+  host.innerHTML =
+    '<div class="modal-bd"><div class="modal" style="width:min(640px,92vw)">'+
+      '<div class="m-h">'+(isEdit?'编辑模型':'新建模型')+'</div>'+
+      '<div class="m-b">'+
+        '<div class="grid cols-2">'+
+          '<div class="field"><label>Provider</label><input id="d_provider" value="'+esc(m.provider||'openai')+'" placeholder="openai"></div>'+
+          '<div class="field"><label>模型名 <span class="muted">(用于路由)</span></label><input id="d_name" value="'+esc(m.name||'')+'" placeholder="gpt-4o-mini"></div>'+
+        '</div>'+
+        '<div class="field" style="margin-top:10px"><label>API URL <span class="muted">(完整 chat completions 地址)</span></label>'+
+          '<input id="d_api_url" value="'+esc(url)+'" placeholder="https://api.openai.com/v1/chat/completions">'+
+          '<span class="muted" id="d_url_hint" style="font-size:11px">'+esc(urlHint)+'</span>'+
+        '</div>'+
+        '<div class="field" style="margin-top:10px"><label>API Key'+
+          (isEdit ? ' <label style="display:inline-flex;align-items:center;gap:4px;font-weight:400;color:var(--muted)"><input type="checkbox" id="d_key_edit" style="width:auto;margin:0" onchange="$(\'d_api_key\').disabled=!this.checked;if(this.checked){$(\'d_api_key\').focus()}else{$(\'d_api_key\').value=\'\'}"> 修改 key</label>' : '') +
+          '</label>'+
+          '<input id="d_api_key" placeholder="'+(isEdit?'保留现有 key，勾选「修改 key」启用输入':'sk-...')+'"'+(isEdit?' disabled':'')+'>'+
+        '</div>'+
+        '<div class="grid cols-4" style="margin-top:10px">'+
+          '<div class="field"><label>权重</label><input id="d_weight" type="number" value="'+(m.weight ?? 1)+'"></div>'+
+          '<div class="field"><label>超时(s)</label><input id="d_timeout" type="number" value="'+(m.provider_timeout || 60)+'"></div>'+
+          '<div class="field"><label>Max Tokens</label><input id="d_max_tokens" type="number" value="'+(m.max_tokens || 2000)+'"></div>'+
+          '<div class="field"><label>Temperature</label><input id="d_temperature" type="number" step="0.1" value="'+(m.temperature ?? 0.3)+'"></div>'+
+        '</div>'+
+        '<div class="field" style="margin-top:10px"><label>状态</label><select id="d_enabled"><option value="true"'+(m.enabled!==false?' selected':'')+'>启用</option><option value="false"'+(m.enabled===false?' selected':'')+'>禁用</option></select></div>'+
+      '</div>'+
+      '<div class="m-f"><button class="btn ghost" id="d_cancel">取消</button><button class="btn" id="d_save">保存</button></div>'+
+    '</div></div>';
+  $('d_api_url').addEventListener('input', e=>{
+    const v = e.target.value;
+    $('d_url_hint').textContent = v && !/\/chat\/completions(\?|$)/.test(v) ? '⚠ 通常应以 /chat/completions 结尾' : '';
+  });
+  const close = ()=>{ host.innerHTML=''; document.removeEventListener('keydown', onKey); };
+  const onKey = e => {
+    if(e.key==='Escape') close();
+    if((e.ctrlKey||e.metaKey) && e.key==='Enter') $('d_save').click();
+  };
+  $('d_cancel').onclick = close;
+  host.querySelector('.modal-bd').onclick = e => { if(e.target===e.currentTarget) close(); };
+  $('d_save').onclick = async ()=>{
+    const provider = $('d_provider').value.trim();
+    const name = $('d_name').value.trim();
+    const api_url = $('d_api_url').value.trim();
+    if(!provider || !name || !api_url){ toast('provider / api_url / 模型名 必填','warn'); return; }
+    const body = {
+      provider, name, api_url,
+      api_key: $('d_api_key').value,
+      weight: Number($('d_weight').value||1),
+      provider_timeout: Number($('d_timeout').value||60),
+      max_tokens: Number($('d_max_tokens').value||2000),
+      temperature: Number($('d_temperature').value||0.3),
+      enabled: $('d_enabled').value==='true',
+    };
+    $('d_save').disabled = true;
+    try{
+      await req('/models',{method:'POST', body: JSON.stringify(body)});
+      toast(isEdit?'已更新':'已创建','success');
+      close();
+      await loadModels();
+    }catch(e){ toast(e.message,'error'); $('d_save').disabled = false; }
+  };
+  document.addEventListener('keydown', onKey);
+  setTimeout(()=>$('d_provider').focus(), 0);
 }
 async function deleteModel(id, label){
   if(!await confirmDlg('删除模型','确定删除 ' + label + '？此操作不可撤销。')) return;
