@@ -135,6 +135,29 @@ cases:
 - `category: translate` — 翻译类用例，期望非空。首次用 `--update` 以模型当前输出作为基线，后续比对识别回归
 - `category: preserve` — 应保留原文不翻译的场景（文件名、版本号、URL、化学式、纯数字等）。要求与原文严格相等
 
+## 快捷脚本
+
+仓库提供 `scripts/transtest/` wrapper，省去重复输入 `--base` 和 `--token`：
+
+```bash
+cp scripts/transtest/.env.example scripts/transtest/.env
+# 编辑 .env 填入 TB_BASE / TB_TOKEN
+
+./scripts/transtest/smoke.sh
+./scripts/transtest/cache.sh --verbose
+./scripts/transtest/bench.sh                 # 默认 10 并发 30 秒
+./scripts/transtest/bench.sh -c 50 -d 1m     # 透传给 transtest
+./scripts/transtest/quality.sh --diff
+```
+
+临时切换环境无需修改 .env：
+
+```bash
+TB_BASE=http://staging:8080 TB_TOKEN=tr-yyy ./scripts/transtest/smoke.sh
+```
+
+`.env` 已在 `.gitignore` 中，token 不会入库。
+
 ## CI 集成示例
 
 ```bash

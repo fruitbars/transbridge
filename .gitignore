@@ -53,5 +53,8 @@ data/
 # cache/ 是源码目录，仅忽略其中误生成的数据库
 cache/*.db
 
+# 本地脚本环境变量（含 token）
+scripts/transtest/.env
+
 # 测试覆盖率报告
 coverage.out
