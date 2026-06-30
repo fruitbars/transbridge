@@ -34,6 +34,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !h.authorized(w, r) {
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	path := strings.TrimPrefix(r.URL.Path, h.basePath)
 	if path == "" || path == "/" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

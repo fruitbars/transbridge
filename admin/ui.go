@@ -135,7 +135,7 @@ async function loadLogs(){
     '<tr><td>'+esc(r.timestamp)+'</td><td>'+esc(r.provider+'/'+r.model)+'</td><td>'+esc(r.source_lang+' -> '+r.target_lang)+'</td><td>'+r.cache_hit+'</td><td>'+r.success+'</td><td>'+Number(r.process_time_ms||0).toFixed(0)+'</td><td>'+esc(r.error)+'</td></tr>'
   ).join('') + '</tbody></table>';
 }
-async function loadAll(){ try{ await Promise.all([loadStats(),loadModels(),loadTokens(),loadPrompts(),loadLogs()]); }catch(e){ alert(e.message); } }
+async function loadAll(){ try{ await Promise.all([loadStats(),loadModels(),loadTokens(),loadPrompts(),loadLogs()]); }catch(e){ console.error(e); alert('后台数据加载失败: '+e.message); } }
 loadAll();
 </script>
 </body>
