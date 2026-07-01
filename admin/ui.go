@@ -404,6 +404,43 @@ function renderModels(){
       '</td>'+
     '</tr>').join('') + '</tbody></table></div>';
 }
+// logCellPreview 生成日志表格里"输入"/"输出"单元格的紧凑预览。
+// 超过 60 字符显示"前 60 + ..."，附带一个"查看"按钮点开展全文；空值显示灰色 "-"。
+function logCellPreview(text, id, kind){
+  if(!text) return '<span class="muted">-</span>';
+  const preview = text.length > 60 ? esc(text.slice(0, 60)) + '…' : esc(text);
+  const btn = text.length > 60 ? ' <button class="btn ghost sm" data-act="show-log-text" data-id="'+id+'" data-kind="'+kind+'">查看</button>' : '';
+  return '<span class="muted" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle" title="'+esc(text.slice(0, 500))+'">'+preview+'</span>'+btn;
+}
+function showLogText(id, kind){
+  const r = state.data.logs.find(x => x.id === id);
+  if(!r){ toast('日志已刷新，请重新点击','warn'); return; }
+  const text = kind === 'in' ? (r.source_text || '') : (r.target_text || '');
+  const title = kind === 'in' ? '输入原文' : '输出译文';
+  showTextDialog(title, text);
+}
+function showLogError(id){
+  const r = state.data.logs.find(x => x.id === id);
+  if(!r){ toast('日志已刷新，请重新点击','warn'); return; }
+  showTextDialog('错误详情', r.error || '(no error)');
+}
+function showTextDialog(title, text){
+  const host = $('modal-host');
+  host.innerHTML = '<div class="modal-bd"><div class="modal" style="width:min(720px,92vw)">'+
+    '<div class="m-h">'+esc(title)+'</div>'+
+    '<div class="m-b"><textarea readonly style="min-height:200px;max-height:60vh;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px">'+esc(text)+'</textarea></div>'+
+    '<div class="m-f"><button class="btn ghost" id="td_close">关闭</button><button class="btn" id="td_copy">复制</button></div>'+
+    '</div></div>';
+  const close = ()=>{ host.innerHTML=''; document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if(e.key==='Escape') close(); };
+  $('td_close').onclick = close;
+  host.querySelector('.modal-bd').onclick = e => { if(e.target===e.currentTarget) close(); };
+  $('td_copy').onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(text); toast('已复制','success'); }
+    catch(e){ toast('复制失败','error'); }
+  };
+  document.addEventListener('keydown', onKey);
+}
 function editModelById(id){
   const m = state.data.models.find(x => x.id === id);
   if(!m){ toast('模型不存在，已自动刷新','warn'); loadModels(); return; }
@@ -445,6 +482,8 @@ document.addEventListener('click', e => {
     case 'reveal-token': revealToken(id); break;
     case 'copy-token': copyToken(id); break;
     case 'toggle-token': toggleToken(id); break;
+    case 'show-log-text': showLogText(id, btn.dataset.kind); break;
+    case 'show-log-error': showLogError(id); break;
     case 'activate-prompt': activatePrompt(id); break;
   }
 });
@@ -745,16 +784,18 @@ function renderLogs(){
   const host = $('t-logs');
   if(total === 0){ host.innerHTML = emptyState(q?'没有匹配的日志':'尚无日志'); return; }
   let html = '<div class="tbl-wrap"><table><thead><tr>'+
-    thSort('logs','timestamp','时间') + '<th>端点</th><th>模型</th><th>语言</th>' + thSort('logs','process_time_ms','耗时') + '<th>字符</th><th>结果</th>'+
+    thSort('logs','timestamp','时间') + '<th>端点</th><th>模型</th><th>语言</th>' + thSort('logs','process_time_ms','耗时') + '<th>字符</th><th>输入</th><th>输出</th><th>结果</th>'+
     '</tr></thead><tbody>' +
-    rows.map(r => '<tr>'+
+    rows.map((r, i) => '<tr>'+
       '<td title="'+esc(r.timestamp)+'">'+esc(relTime(r.timestamp))+'</td>'+
       '<td class="muted"><code>'+esc(r.endpoint||'-')+'</code></td>'+
       '<td>'+brandPill(r.provider)+' <code>'+esc(r.model)+'</code></td>'+
       '<td><code>'+esc(r.source_lang||'?')+'→'+esc(r.target_lang||'?')+'</code></td>'+
       '<td>'+Number(r.process_time_ms||0).toFixed(0)+' ms</td>'+
       '<td class="muted">'+(r.source_chars||0)+'→'+(r.target_chars||0)+'</td>'+
-      '<td>'+dot(r.success)+' '+(r.cache_hit?'<span class="pill">缓存</span>':'')+(r.error?' <span class="muted" title="'+esc(r.error)+'">'+esc(r.error.slice(0,30))+'…</span>':'')+'</td>'+
+      '<td>'+logCellPreview(r.source_text, r.id, 'in')+'</td>'+
+      '<td>'+logCellPreview(r.target_text, r.id, 'out')+'</td>'+
+      '<td>'+dot(r.success)+' '+(r.cache_hit?'<span class="pill">缓存</span>':'')+(r.error?' <button class="btn ghost sm" data-act="show-log-error" data-id="'+r.id+'">错误</button>':'')+'</td>'+
     '</tr>').join('') + '</tbody></table></div>';
   if(totalPages > 1){
     const cur = state.page.logs;

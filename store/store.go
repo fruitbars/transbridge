@@ -66,6 +66,8 @@ type RequestLog struct {
 	ProcessTimeMS float64   `json:"process_time_ms"`
 	SourceChars   int       `json:"source_chars"`
 	TargetChars   int       `json:"target_chars"`
+	SourceText    string    `json:"source_text"`
+	TargetText    string    `json:"target_text"`
 }
 
 type Stats struct {
@@ -243,6 +245,9 @@ func (s *Store) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	// source_text / target_text 后期增加列，幂等 ALTER（忽略 duplicate column 错误）
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE request_logs ADD COLUMN source_text TEXT NOT NULL DEFAULT ''`)
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE request_logs ADD COLUMN target_text TEXT NOT NULL DEFAULT ''`)
 	return nil
 }
 
@@ -700,8 +705,8 @@ func (s *Store) LogRequest(ctx context.Context, r RequestLog) error {
 	if r.Timestamp.IsZero() {
 		r.Timestamp = time.Now().UTC()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO request_logs(timestamp, endpoint, source_lang, target_lang, provider, model, api_url, cache_hit, success, error, process_time_ms, source_chars, target_chars) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.Timestamp.UTC().Format(time.RFC3339Nano), r.Endpoint, r.SourceLang, r.TargetLang, r.Provider, r.Model, r.APIURL, boolInt(r.CacheHit), boolInt(r.Success), r.Error, r.ProcessTimeMS, r.SourceChars, r.TargetChars)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO request_logs(timestamp, endpoint, source_lang, target_lang, provider, model, api_url, cache_hit, success, error, process_time_ms, source_chars, target_chars, source_text, target_text) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Timestamp.UTC().Format(time.RFC3339Nano), r.Endpoint, r.SourceLang, r.TargetLang, r.Provider, r.Model, r.APIURL, boolInt(r.CacheHit), boolInt(r.Success), r.Error, r.ProcessTimeMS, r.SourceChars, r.TargetChars, r.SourceText, r.TargetText)
 	return err
 }
 
@@ -709,7 +714,7 @@ func (s *Store) ListRequestLogs(ctx context.Context, limit int) ([]RequestLog, e
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, timestamp, endpoint, source_lang, target_lang, provider, model, api_url, cache_hit, success, error, process_time_ms, source_chars, target_chars FROM request_logs ORDER BY id DESC LIMIT ?`, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, timestamp, endpoint, source_lang, target_lang, provider, model, api_url, cache_hit, success, error, process_time_ms, source_chars, target_chars, source_text, target_text FROM request_logs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -719,7 +724,7 @@ func (s *Store) ListRequestLogs(ctx context.Context, limit int) ([]RequestLog, e
 		var r RequestLog
 		var ts string
 		var cacheHit, success int
-		if err := rows.Scan(&r.ID, &ts, &r.Endpoint, &r.SourceLang, &r.TargetLang, &r.Provider, &r.Model, &r.APIURL, &cacheHit, &success, &r.Error, &r.ProcessTimeMS, &r.SourceChars, &r.TargetChars); err != nil {
+		if err := rows.Scan(&r.ID, &ts, &r.Endpoint, &r.SourceLang, &r.TargetLang, &r.Provider, &r.Model, &r.APIURL, &cacheHit, &success, &r.Error, &r.ProcessTimeMS, &r.SourceChars, &r.TargetChars, &r.SourceText, &r.TargetText); err != nil {
 			return nil, err
 		}
 		r.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)

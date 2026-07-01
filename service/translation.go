@@ -245,6 +245,8 @@ func (s *TranslationService) logRequest(ctx context.Context, sourceText, targetT
 		ProcessTimeMS: float64(processTimeMs),
 		SourceChars:   len([]rune(sourceText)),
 		TargetChars:   len([]rune(targetText)),
+		SourceText:    sourceText,
+		TargetText:    targetText,
 	}); err != nil {
 		log.Printf("Failed to log request stats: %v", err)
 	}
