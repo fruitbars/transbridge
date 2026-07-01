@@ -38,6 +38,7 @@ type Handler struct {
 	promptProvider     func(*http.Request) string
 	defaultPrompt      string
 	maxConcurrent      int
+	maxElements        int
 	debugLogger        *DebugLogger
 }
 
@@ -47,6 +48,7 @@ type HandlerConfig struct {
 	PromptProvider func(*http.Request) string
 	DefaultPrompt  string
 	MaxConcurrent  int
+	MaxElements    int          // 单请求最多 elements，0 = 默认 2000
 	DebugLogger    *DebugLogger // nil = 关闭调试日志
 }
 
@@ -59,12 +61,17 @@ func newHandler(svc TranslatorFn, cfg HandlerConfig) *Handler {
 	if max <= 0 {
 		max = 5
 	}
+	maxElem := cfg.MaxElements
+	if maxElem <= 0 {
+		maxElem = 2000
+	}
 	return &Handler{
 		translationService: svc,
 		authValidator:      cfg.AuthValidator,
 		promptProvider:     cfg.PromptProvider,
 		defaultPrompt:      cfg.DefaultPrompt,
 		maxConcurrent:      max,
+		maxElements:        maxElem,
 		debugLogger:        cfg.DebugLogger,
 	}
 }
@@ -101,8 +108,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.sendError(w, "elements is required", http.StatusBadRequest)
 		return
 	}
-	if len(req.Elements) > 2000 {
-		h.sendError(w, "too many elements (max 2000)", http.StatusBadRequest)
+	if len(req.Elements) > h.maxElements {
+		h.sendError(w, fmt.Sprintf("too many elements (max %d)", h.maxElements), http.StatusBadRequest)
 		return
 	}
 

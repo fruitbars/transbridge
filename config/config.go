@@ -23,6 +23,7 @@ type Config struct {
 // debug_log_path 非空时，服务端把每次请求的 request / response / trace 以 JSONL 写盘，
 // 供调用方回收数据后离线分析（policy 决策分布、模型翻译质量等）。
 type OCRConfig struct {
+	MaxElements       int    `yaml:"max_elements"`           // /ocr/translate 单请求 elements 上限，0 或未设 = 2000
 	DebugLogPath      string `yaml:"debug_log_path"`         // JSONL 落盘路径，空 = 关闭调试日志
 	DebugLogMaxSizeMB int    `yaml:"debug_log_max_size_mb"`  // 单文件上限，默认 100
 	DebugLogMaxFiles  int    `yaml:"debug_log_max_files"`    // 保留历史文件数，默认 5

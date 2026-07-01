@@ -205,6 +205,7 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 		AuthValidator:  makeAuthValidator(adminStore),
 		PromptProvider: makePromptProvider(adminStore, cfg.Prompt.Template),
 		DefaultPrompt:  cfg.Prompt.Template,
+		MaxElements:    cfg.OCR.MaxElements,
 		DebugLogger:    ocrDebugLogger,
 	})
 	mux.HandleFunc("/ocr/translate",
