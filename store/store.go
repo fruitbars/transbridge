@@ -133,19 +133,25 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("create sqlite directory: %w", err)
 		}
 	}
-	// DSN 参数让并发写者能排队等锁而不是立刻返回 SQLITE_BUSY：
-	//   _journal_mode=WAL  多并发写者共享 WAL 文件，读写不阻塞
-	//   _busy_timeout=5000 驱动内部自动重试最多 5 秒
-	//   _synchronous=NORMAL 配合 WAL 时安全且比 FULL 快很多
+	// modernc.org/sqlite DSN 用 _pragma=name(val) 语法（不同于 mattn/go-sqlite3 的 _foo=val）。
+	// 每一个新连接打开时都会自动应用这些 pragma——因此连接池里所有 connection 都进入 WAL 模式。
+	//   journal_mode=WAL   多并发写者共享 WAL 文件，读不阻塞写、写不阻塞读
+	//   busy_timeout=5000  拿不到锁时驱动内部轮询重试 5 秒，避免立刻 SQLITE_BUSY
+	//   synchronous=NORMAL 配合 WAL 时数据安全 & 比 FULL 快数倍
 	dsn := path
 	if !strings.Contains(dsn, "?") {
-		dsn += "?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL"
+		dsn += "?"
+	} else {
+		dsn += "&"
 	}
+	dsn += "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
+	// 显式限制单写：SQLite 只允许一个写者，多开只会让 busy_timeout 更容易触发。
+	// 读连接不受影响（modernc 会自动共享）。
+	db.SetMaxOpenConns(1)
 	s := &Store{db: db}
 	if err := s.Migrate(context.Background()); err != nil {
 		db.Close()
