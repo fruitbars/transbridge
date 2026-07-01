@@ -2,7 +2,10 @@ package admin
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -15,6 +18,9 @@ import (
 	"transbridge/store"
 	"transbridge/translator"
 )
+
+const adminSessionCookie = "tb_admin"
+const adminSessionTTL = 12 * time.Hour
 
 type Handler struct {
 	store        *store.Store
@@ -391,6 +397,10 @@ func (h *Handler) authorized(w http.ResponseWriter, r *http.Request) bool {
 	if h.cfg.Admin.Username == "" && h.cfg.Admin.Password == "" {
 		return true
 	}
+	if h.validSessionCookie(r) {
+		h.issueSessionCookie(w, r)
+		return true
+	}
 	user, pass, ok := r.BasicAuth()
 	if !ok ||
 		subtle.ConstantTimeCompare([]byte(user), []byte(h.cfg.Admin.Username)) != 1 ||
@@ -399,7 +409,54 @@ func (h *Handler) authorized(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return false
 	}
+	h.issueSessionCookie(w, r)
 	return true
+}
+
+func (h *Handler) sessionKey() []byte {
+	return []byte(h.cfg.Admin.Username + "\x00" + h.cfg.Admin.Password)
+}
+
+func (h *Handler) signSession(payload string) string {
+	mac := hmac.New(sha256.New, h.sessionKey())
+	mac.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func (h *Handler) issueSessionCookie(w http.ResponseWriter, r *http.Request) {
+	exp := time.Now().Add(adminSessionTTL).Unix()
+	payload := h.cfg.Admin.Username + ":" + strconv.FormatInt(exp, 10)
+	value := payload + ":" + h.signSession(payload)
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminSessionCookie,
+		Value:    value,
+		Path:     h.basePath,
+		Expires:  time.Unix(exp, 0),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+}
+
+func (h *Handler) validSessionCookie(r *http.Request) bool {
+	c, err := r.Cookie(adminSessionCookie)
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(c.Value, ":", 3)
+	if len(parts) != 3 {
+		return false
+	}
+	user, expStr, sig := parts[0], parts[1], parts[2]
+	if subtle.ConstantTimeCompare([]byte(user), []byte(h.cfg.Admin.Username)) != 1 {
+		return false
+	}
+	exp, err := strconv.ParseInt(expStr, 10, 64)
+	if err != nil || time.Now().Unix() >= exp {
+		return false
+	}
+	expected := h.signSession(user + ":" + expStr)
+	return subtle.ConstantTimeCompare([]byte(sig), []byte(expected)) == 1
 }
 
 func isLocal(remoteAddr string) bool {
