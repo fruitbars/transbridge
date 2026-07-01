@@ -16,6 +16,16 @@ type Config struct {
 	Log       LogConfig        `yaml:"log"`      // 新增日志配置
 	Storage   StorageConfig    `yaml:"storage"`  // 管理后台持久化配置
 	Admin     AdminConfig      `yaml:"admin"`    // 本地管理后台配置
+	OCR       OCRConfig        `yaml:"ocr"`      // /ocr/translate 相关配置
+}
+
+// OCRConfig /ocr/translate 接口的可选配置。默认全为空/零，接口本身仍可用。
+// debug_log_path 非空时，服务端把每次请求的 request / response / trace 以 JSONL 写盘，
+// 供调用方回收数据后离线分析（policy 决策分布、模型翻译质量等）。
+type OCRConfig struct {
+	DebugLogPath      string `yaml:"debug_log_path"`         // JSONL 落盘路径，空 = 关闭调试日志
+	DebugLogMaxSizeMB int    `yaml:"debug_log_max_size_mb"`  // 单文件上限，默认 100
+	DebugLogMaxFiles  int    `yaml:"debug_log_max_files"`    // 保留历史文件数，默认 5
 }
 
 // LogConfig 日志配置

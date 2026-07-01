@@ -241,9 +241,52 @@ Content-Type: application/json
 - **一个 element 可能生成多条日志**（尤其是 HTML 表格，每 cell 一条）
 - 每条日志的 `endpoint` 字段目前是 provider 的调用端点，不会区分出 `/ocr/translate` —— 如果需要按接口维度统计，后续再加
 
+## 调试日志
+
+配置里加 `ocr.debug_log_path` 后，服务端把每次 `/ocr/translate` 的**完整 request + response + 每 element 的处理 trace** 以 JSONL 追加到指定文件。用于集成方回收生产真实数据供离线分析（policy 决策分布、模型翻译质量、内联标签 round-trip 成功率等）。
+
+```yaml
+ocr:
+  debug_log_path: "/var/log/transbridge/ocr-debug.jsonl"
+  debug_log_max_size_mb: 100    # 默认 100，单文件超过后自动 rotate
+  debug_log_max_files: 5        # 保留 5 个历史，最老的删掉
+```
+
+**默认关闭**（`debug_log_path` 为空时零开销，request 路径完全不进日志分支）。
+
+一行一条 record：
+
+```json
+{
+  "ts": "2026-07-01T10:56:23.530151Z",
+  "request_id": "ocr-1782903383530153000-1",
+  "source_lang": "en", "target_lang": "zh",
+  "elapsed_ms": 2, "element_count": 4,
+  "request":  { /* 完整 OCRRequest */ },
+  "response": { /* 完整 OCRResponse */ },
+  "trace": [
+    { "id": "h",   "type": "header",    "route": "skip_type",     "reason": "header_skipped" },
+    { "id": "zh",  "type": "text",      "route": "language_skip", "reason": "already_in_target_lang" },
+    { "id": "t",   "type": "table",     "route": "table_html",    "translated": true,
+      "cells_total": 2, "cells_translated": 1, "cells_skipped": 1, "placeholder_count": 1 },
+    { "id": "ref", "type": "reference", "route": "reference",     "reason": "reference_no_translatable_title" }
+  ]
+}
+```
+
+**trace.route** 值域：`skip_type` / `reference` / `language_skip` / `table_html` / `caption` / `html_reject` / `markdown` / `text` / `cancelled`。
+
+**表格额外字段**：`cells_total`（去除空 cell 前的总数）、`cells_translated`（真的被翻译的数目）、`cells_skipped`（policy skip + 同语言 skip 加总）、`placeholder_count`（含内联标签的 cell 数）。
+
+**实现细节**：
+- 写入是异步（内部 128 大小的 channel + 后台 goroutine），不会阻塞正常翻译请求
+- 队列满会静默 drop（`ocr.DebugDropped()` 返回累计丢弃数），优先保证 handler 正常运行
+- Rotation 按字节触发：单文件超过 `max_size_mb` 就把 `foo.jsonl` 改名为 `foo.jsonl.1`，历史文件依次后推
+- 内容可能含调用方的 OCR 文本，**注意隐私**——路径请落在受控目录并按需清理
+
 ## 二版计划
 
-- 保留内联样式标签（`<b>`, `<a>`, `<sub>` 等）—— 用 tokenize/untokenize 或替换文本节点原地翻译
 - 数据表格可选 markdown 整表模式（见 [`TRANSLATION.md`](./TRANSLATION.md) 里对合并单元格和结构校验的讨论）
-- reference 类型的智能识别（DOI / 期刊名不译，摘要译）
 - 请求维度并发独立配置（现在跟表格 cell 抢一个信号量）
+- 术语表（glossary）：调用方能提交 `{"neural network": "神经网络"}` 强制映射
+- Figure 元素的 `alt` 文本翻译

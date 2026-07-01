@@ -193,10 +193,19 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 		),
 	)
 
+	ocrDebugLogger, err := ocr.NewDebugLogger(cfg.OCR.DebugLogPath, cfg.OCR.DebugLogMaxSizeMB, cfg.OCR.DebugLogMaxFiles)
+	if err != nil {
+		log.Printf("Warning: cannot open OCR debug log %q: %v — proceeding without it", cfg.OCR.DebugLogPath, err)
+	}
+	if ocrDebugLogger != nil {
+		log.Printf("OCR debug log enabled: %s (max_size=%dMB, max_files=%d)", cfg.OCR.DebugLogPath, cfg.OCR.DebugLogMaxSizeMB, cfg.OCR.DebugLogMaxFiles)
+	}
+
 	ocrHandler := ocr.NewHandler(translationService, ocr.HandlerConfig{
 		AuthValidator:  makeAuthValidator(adminStore),
 		PromptProvider: makePromptProvider(adminStore, cfg.Prompt.Template),
 		DefaultPrompt:  cfg.Prompt.Template,
+		DebugLogger:    ocrDebugLogger,
 	})
 	mux.HandleFunc("/ocr/translate",
 		middleware.Chain(

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"transbridge/service"
 )
@@ -36,6 +38,7 @@ type Handler struct {
 	promptProvider     func(*http.Request) string
 	defaultPrompt      string
 	maxConcurrent      int
+	debugLogger        *DebugLogger
 }
 
 // HandlerConfig 构造参数
@@ -44,6 +47,7 @@ type HandlerConfig struct {
 	PromptProvider func(*http.Request) string
 	DefaultPrompt  string
 	MaxConcurrent  int
+	DebugLogger    *DebugLogger // nil = 关闭调试日志
 }
 
 func NewHandler(svc *service.TranslationService, cfg HandlerConfig) *Handler {
@@ -61,6 +65,7 @@ func newHandler(svc TranslatorFn, cfg HandlerConfig) *Handler {
 		promptProvider:     cfg.PromptProvider,
 		defaultPrompt:      cfg.DefaultPrompt,
 		maxConcurrent:      max,
+		debugLogger:        cfg.DebugLogger,
 	}
 }
 
@@ -105,7 +110,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	sem := make(chan struct{}, h.maxConcurrent)
 	results := make([]OCRTranslation, len(req.Elements))
+	traces := make([]ElementTrace, len(req.Elements))
 	var wg sync.WaitGroup
+
+	overallStart := time.Now()
 
 	for i, el := range req.Elements {
 		wg.Add(1)
@@ -115,66 +123,87 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			case sem <- struct{}{}:
 			case <-r.Context().Done():
 				results[idx] = OCRTranslation{ID: e.ID, Type: e.Type, ContentFormat: e.ContentFormat, Content: e.Content, Reason: r.Context().Err().Error()}
+				traces[idx] = ElementTrace{ID: e.ID, Type: string(e.Type), Route: "cancelled", Reason: r.Context().Err().Error()}
 				return
 			}
 			defer func() { <-sem }()
-			results[idx] = h.processElement(r.Context(), e, promptTemplate, req.SourceLang, req.TargetLang)
+			results[idx], traces[idx] = h.processElement(r.Context(), e, promptTemplate, req.SourceLang, req.TargetLang)
 		}(i, el)
 	}
 	wg.Wait()
 
-	h.sendJSON(w, OCRResponse{Code: 200, Translations: results})
+	resp := OCRResponse{Code: 200, Translations: results}
+	h.sendJSON(w, resp)
+
+	if h.debugLogger != nil {
+		reqCopy := req
+		respCopy := resp
+		h.debugLogger.Log(DebugRecord{
+			Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
+			RequestID:    newRequestID(),
+			SourceLang:   req.SourceLang,
+			TargetLang:   req.TargetLang,
+			ElapsedMs:    time.Since(overallStart).Milliseconds(),
+			ElementCount: len(req.Elements),
+			Request:      &reqCopy,
+			Response:     &respCopy,
+			Trace:        traces,
+		})
+	}
 }
 
-func (h *Handler) processElement(ctx context.Context, e OCRElement, promptTemplate, srcLang, tgtLang string) OCRTranslation {
+func (h *Handler) processElement(ctx context.Context, e OCRElement, promptTemplate, srcLang, tgtLang string) (OCRTranslation, ElementTrace) {
 	et := e.Type
 	if et == "" {
 		et = ElementText
 	}
+	start := time.Now()
+	trace := ElementTrace{ID: e.ID, Type: string(et)}
 	base := OCRTranslation{ID: e.ID, Type: et, ContentFormat: e.ContentFormat, Content: e.Content}
 
-	// 直接 skip 的类型：页眉/页脚/图/公式
-	switch et {
-	case ElementHeader, ElementFooter, ElementFigure, ElementEquation:
+	var result OCRTranslation
+	switch {
+	case et == ElementHeader || et == ElementFooter || et == ElementFigure || et == ElementEquation:
+		trace.Route = "skip_type"
 		base.Reason = fmt.Sprintf("%s_skipped", et)
-		return base
-	}
+		result = base
 
-	// reference：只翻译引号包裹的文章标题；作者/期刊名/DOI/卷号原样保留
-	if et == ElementReference {
-		return h.translateReference(ctx, base, e.Content, promptTemplate, srcLang, tgtLang)
-	}
+	case et == ElementReference:
+		trace.Route = "reference"
+		result = h.translateReference(ctx, base, e.Content, promptTemplate, srcLang, tgtLang)
 
-	// 语言检测：如果 content 主导脚本已经是目标语言，跳过（防止中文段落被误翻）。
-	// 表格 HTML 例外：每个 cell 单独检测，整块判定会让姓名列一票否决。
-	if !(et == ElementTable && e.ContentFormat == FormatHTML) {
-		if contentAlreadyInTargetLang(e.Content, tgtLang) {
-			base.Reason = "already_in_target_lang"
-			return base
-		}
-	}
+	case et == ElementTable && e.ContentFormat == FormatHTML:
+		trace.Route = "table_html"
+		result = h.translateTableHTML(ctx, base, e, promptTemplate, srcLang, tgtLang, &trace)
 
-	// caption：保留 "Figure 2." / "表 3" 前置编号
-	if et == ElementTableCaption || et == ElementFigureCaption {
-		return h.translateCaption(ctx, base, e, promptTemplate, srcLang, tgtLang)
-	}
+	case contentAlreadyInTargetLang(e.Content, tgtLang):
+		trace.Route = "language_skip"
+		base.Reason = "already_in_target_lang"
+		result = base
 
-	// table + html：走单元格粒度翻译
-	if et == ElementTable && e.ContentFormat == FormatHTML {
-		return h.translateTableHTML(ctx, base, e, promptTemplate, srcLang, tgtLang)
-	}
+	case et == ElementTableCaption || et == ElementFigureCaption:
+		trace.Route = "caption"
+		result = h.translateCaption(ctx, base, e, promptTemplate, srcLang, tgtLang)
 
-	// 其余：按 content_format 处理
-	switch e.ContentFormat {
-	case FormatHTML:
-		// 第一版不支持非表格 HTML
+	case e.ContentFormat == FormatHTML:
+		trace.Route = "html_reject"
 		base.Reason = "html_only_supported_for_table"
-		return base
-	case FormatMarkdown:
-		return h.translateMarkdown(ctx, base, e.Content, promptTemplate, srcLang, tgtLang)
-	default: // FormatText 或空
-		return h.translateWithSuffix(ctx, base, e.Content, promptTemplate, srcLang, tgtLang)
+		result = base
+
+	case e.ContentFormat == FormatMarkdown:
+		trace.Route = "markdown"
+		result = h.translateMarkdown(ctx, base, e.Content, promptTemplate, srcLang, tgtLang)
+
+	default:
+		trace.Route = "text"
+		result = h.translateWithSuffix(ctx, base, e.Content, promptTemplate, srcLang, tgtLang)
 	}
+
+	trace.Translated = result.Translated
+	trace.Reason = result.Reason
+	trace.Error = result.Error
+	trace.ElapsedMs = time.Since(start).Milliseconds()
+	return result, trace
 }
 
 func (h *Handler) translateMarkdown(ctx context.Context, base OCRTranslation, text, promptTemplate, srcLang, tgtLang string) OCRTranslation {
@@ -278,7 +307,7 @@ func (h *Handler) translateWithSuffix(ctx context.Context, base OCRTranslation, 
 // placeholderInputPrefix 给含 ⟪N⟫...⟪/N⟫ 占位符的 cell 加前缀，避免模型改写或删除标记。
 const placeholderInputPrefix = "Preserve every ⟪N⟫...⟪/N⟫ marker exactly as-is (they mark inline formatting to be restored later); translate only the surrounding text.\n\n"
 
-func (h *Handler) translateTableHTML(ctx context.Context, base OCRTranslation, e OCRElement, promptTemplate, srcLang, tgtLang string) OCRTranslation {
+func (h *Handler) translateTableHTML(ctx context.Context, base OCRTranslation, e OCRElement, promptTemplate, srcLang, tgtLang string, trace *ElementTrace) OCRTranslation {
 	texts, finalize, err := PrepareTable(e.Content)
 	if err != nil {
 		base.Error = "parse table: " + err.Error()
@@ -289,20 +318,32 @@ func (h *Handler) translateTableHTML(ctx context.Context, base OCRTranslation, e
 		return base
 	}
 
+	if trace != nil {
+		trace.CellsTotal = len(texts)
+		for _, t := range texts {
+			if strings.Contains(t, placeholderOpen) {
+				trace.PlaceholderCount++
+			}
+		}
+	}
+
 	translated := make([]string, len(texts))
 	sem := make(chan struct{}, h.maxConcurrent)
 	var wg sync.WaitGroup
 	anyTranslated := false
+	var cellsTranslated, cellsSkipped int32
 	var anyErrMu sync.Mutex
 	var anyErr string
 
 	for i, cellText := range texts {
 		if strings.TrimSpace(cellText) == "" {
 			translated[i] = ""
+			atomic.AddInt32(&cellsSkipped, 1)
 			continue
 		}
 		if contentAlreadyInTargetLang(cellText, tgtLang) {
 			translated[i] = ""
+			atomic.AddInt32(&cellsSkipped, 1)
 			continue
 		}
 		wg.Add(1)
@@ -334,15 +375,22 @@ func (h *Handler) translateTableHTML(ctx context.Context, base OCRTranslation, e
 			}
 			if out == srcText {
 				translated[idx] = ""
+				atomic.AddInt32(&cellsSkipped, 1)
 				return
 			}
 			translated[idx] = out
+			atomic.AddInt32(&cellsTranslated, 1)
 			anyErrMu.Lock()
 			anyTranslated = true
 			anyErrMu.Unlock()
 		}(i, cellText)
 	}
 	wg.Wait()
+
+	if trace != nil {
+		trace.CellsTranslated = int(cellsTranslated)
+		trace.CellsSkipped = int(cellsSkipped)
+	}
 
 	rendered, err := finalize(translated)
 	if err != nil {
