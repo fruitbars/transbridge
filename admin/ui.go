@@ -146,6 +146,13 @@ const indexHTML = `<!doctype html>
       <section id="v-dashboard" class="view">
         <div class="metrics" id="m-metrics"></div>
         <div class="card" style="margin-top:16px">
+          <div class="card-h">
+            <h2>模型实时限流</h2>
+            <span class="muted" style="font-size:12px">每 3 秒自动刷新</span>
+          </div>
+          <div class="card-b flush"><div id="m-live"></div></div>
+        </div>
+        <div class="card" style="margin-top:16px">
           <div class="card-h"><h2>近期请求</h2><a class="muted" onclick="go('logs')" style="cursor:pointer;font-size:12px">查看全部 →</a></div>
           <div class="card-b flush"><div id="m-recent"></div></div>
         </div>
@@ -309,6 +316,7 @@ function go(view){
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('active', s.id==='v-'+view));
   $('page-title').textContent = titles[view] || view;
   location.hash = view;
+  if(view === 'dashboard'){ startLiveMetrics(); } else { stopLiveMetrics(); }
 }
 document.querySelectorAll('aside nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); go(a.dataset.view); }));
 
@@ -343,6 +351,53 @@ function emptyState(msg){ return '<div class="empty">'+esc(msg)+'</div>'; }
 
 
 // 仪表盘
+let liveMetricsTimer = null;
+function startLiveMetrics(){
+  if(liveMetricsTimer) return;
+  const tick = async ()=>{
+    if(state.view !== 'dashboard'){ return; }
+    try{
+      const data = await req('/metrics');
+      renderLiveMetrics(data.models || {});
+    }catch(e){ /* silent — 后台轮询不打扰用户 */ }
+  };
+  tick();
+  liveMetricsTimer = setInterval(tick, 3000);
+}
+function stopLiveMetrics(){
+  if(liveMetricsTimer){ clearInterval(liveMetricsTimer); liveMetricsTimer = null; }
+}
+function pctBar(used, limit){
+  if(limit <= 0) return '<span class="muted">—</span>';
+  const pct = Math.min(100, Math.round(used*100/limit));
+  const color = pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warn)' : 'var(--success)';
+  return '<div style="display:flex;align-items:center;gap:6px"><span style="min-width:52px">'+used+' / '+limit+'</span>'+
+    '<div style="flex:1;height:6px;background:#eef2f7;border-radius:3px;overflow:hidden;max-width:120px"><div style="width:'+pct+'%;height:100%;background:'+color+'"></div></div></div>';
+}
+function renderLiveMetrics(models){
+  const host = $('m-live');
+  const keys = Object.keys(models).sort();
+  if(keys.length === 0){ host.innerHTML = emptyState('未配置任何限流的模型'); return; }
+  // 过滤掉没有任何限流配置的模型（三个 limit 都是 0）
+  const active = keys.filter(k => {
+    const s = models[k];
+    return s.max_concurrent > 0 || s.qps_limit > 0 || s.qpm_limit > 0;
+  });
+  if(active.length === 0){ host.innerHTML = emptyState('已配置的模型都没有开启限流'); return; }
+  host.innerHTML = '<div class="tbl-wrap"><table><thead><tr>'+
+    '<th>模型</th><th>并发</th><th>QPS（近 1s）</th><th>QPM（近 60s）</th><th>排队中</th>'+
+    '</tr></thead><tbody>' +
+    active.map(k => {
+      const s = models[k];
+      return '<tr>'+
+        '<td><code>'+esc(k)+'</code></td>'+
+        '<td>'+pctBar(s.in_flight, s.max_concurrent)+'</td>'+
+        '<td>'+pctBar(s.qps_used, s.qps_limit)+'</td>'+
+        '<td>'+pctBar(s.qpm_used, s.qpm_limit)+'</td>'+
+        '<td>'+(s.waiting > 0 ? '<span class="badge" style="background:'+(s.waiting > 50 ? 'var(--warn)' : '#eef2f7')+';color:'+(s.waiting > 50 ? '#fff' : 'var(--text)')+';padding:2px 8px;border-radius:10px">'+s.waiting+'</span>' : '<span class="muted">0</span>')+'</td>'+
+      '</tr>';
+    }).join('') + '</tbody></table></div>';
+}
 async function loadDashboard(){
   const [s, logs] = await Promise.all([req('/stats'), req('/logs?limit=10')]);
   state.data.stats = s;

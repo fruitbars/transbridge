@@ -2,11 +2,25 @@ package translator
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"transbridge/config"
 )
+
+// LimiterStats 描述某个 model 当前的限流状态。
+// 上游模型的并发和 QPS/QPM 各自独立，都需要观察是否接近上限。
+type LimiterStats struct {
+	MaxConcurrent int `json:"max_concurrent"`
+	InFlight      int `json:"in_flight"` // 当前有多少个请求正占着 semaphore
+	Waiting       int `json:"waiting"`   // 当前有多少 goroutine 正等着 semaphore/rate（近似值）
+	QPSLimit      int `json:"qps_limit"`
+	QPSUsed       int `json:"qps_used"` // 最近 1s 内已消费的请求数
+	QPMLimit      int `json:"qpm_limit"`
+	QPMUsed       int `json:"qpm_used"` // 最近 60s 内已消费的请求数
+}
 
 type rateLimitedTranslator struct {
 	inner   Translator
@@ -32,6 +46,14 @@ func (t *rateLimitedTranslator) Translate(ctx context.Context, promptTemplate, t
 	return t.inner.Translate(ctx, promptTemplate, text, sourceLang, targetLang)
 }
 
+// Stats 返回当前 limiter 的实时使用情况。
+func (t *rateLimitedTranslator) Stats() LimiterStats {
+	if t.limiter == nil {
+		return LimiterStats{}
+	}
+	return t.limiter.Stats()
+}
+
 func (t *rateLimitedTranslator) GetAPIURL() string {
 	return t.inner.GetAPIURL()
 }
@@ -53,7 +75,10 @@ func (t *rateLimitedTranslator) Unwrap() Translator {
 }
 
 type upstreamLimiter struct {
-	sem chan struct{}
+	sem        chan struct{}
+	maxConc    int
+	maxWaiting int   // 0 = 不限
+	waiting    int64 // atomic：正在等 Acquire 的 goroutine 数（近似）
 
 	mu       sync.Mutex
 	qps      int
@@ -81,6 +106,14 @@ func (t realTimer) Stop() bool {
 	return t.timer.Stop()
 }
 
+// DefaultMaxWaitingMultiplier 决定等待队列上限：waiting > maxConcurrent * this 时直接拒绝。
+// 20 意味着 maxConcurrent=10 时最多允许 200 个 goroutine 排队。这个值只影响防溢出兜底，
+// 正常场景不会触发。设为 0 关闭上限（不推荐，OOM 风险）。
+const DefaultMaxWaitingMultiplier = 20
+
+// ErrQueueFull 等待队列已满，调用方应该拒绝该请求或延后重试。
+var ErrQueueFull = errors.New("rate limiter queue full: too many pending requests")
+
 func newUpstreamLimiter(cfg config.RateLimitConfig) *upstreamLimiter {
 	limiter := &upstreamLimiter{
 		qps: cfg.QPS,
@@ -92,14 +125,44 @@ func newUpstreamLimiter(cfg config.RateLimitConfig) *upstreamLimiter {
 	}
 	if cfg.MaxConcurrent > 0 {
 		limiter.sem = make(chan struct{}, cfg.MaxConcurrent)
+		limiter.maxConc = cfg.MaxConcurrent
+		limiter.maxWaiting = cfg.MaxConcurrent * DefaultMaxWaitingMultiplier
 	}
 	return limiter
+}
+
+// Stats 返回一份快照。qps_used / qpm_used 会同时触发一次窗口清理，
+// 因此调用是有一点点副作用的（不会影响其他状态，只是把过期时间戳丢掉）。
+func (l *upstreamLimiter) Stats() LimiterStats {
+	s := LimiterStats{
+		MaxConcurrent: l.maxConc,
+		Waiting:       int(atomic.LoadInt64(&l.waiting)),
+	}
+	if l.sem != nil {
+		s.InFlight = len(l.sem)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	l.perSec = pruneWindow(l.perSec, now, time.Second)
+	l.perMin = pruneWindow(l.perMin, now, time.Minute)
+	s.QPSLimit = l.qps
+	s.QPSUsed = len(l.perSec)
+	s.QPMLimit = l.qpm
+	s.QPMUsed = len(l.perMin)
+	return s
 }
 
 func (l *upstreamLimiter) Acquire(ctx context.Context) (func(), error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// 队列过长直接拒绝，防止 goroutine 堆积压爆内存或让请求排上千秒。
+	if l.maxWaiting > 0 && atomic.LoadInt64(&l.waiting) >= int64(l.maxWaiting) {
+		return nil, ErrQueueFull
+	}
+	atomic.AddInt64(&l.waiting, 1)
+	defer atomic.AddInt64(&l.waiting, -1)
 	release := func() {}
 	if l.sem != nil {
 		select {

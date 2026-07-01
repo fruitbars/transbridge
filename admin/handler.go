@@ -74,6 +74,8 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request, path string) 
 		h.testModel(w, r)
 	case path == "/models/toggle" && r.Method == http.MethodPost:
 		h.toggleModel(w, r)
+	case path == "/metrics" && r.Method == http.MethodGet:
+		h.metrics(w, r)
 	case path == "/tokens" && r.Method == http.MethodGet:
 		tokens, err := h.store.ListTokenViews(r.Context())
 		h.write(w, tokens, err)
@@ -315,6 +317,14 @@ func (h *Handler) toggleModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.reloadModels(w, r.Context())
+}
+
+func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
+	if h.modelManager == nil {
+		h.write(w, map[string]interface{}{"models": map[string]interface{}{}}, nil)
+		return
+	}
+	h.write(w, map[string]interface{}{"models": h.modelManager.AllStats()}, nil)
 }
 
 func (h *Handler) testModel(w http.ResponseWriter, r *http.Request) {

@@ -218,3 +218,22 @@ func (mm *ModelManager) GetModelsByProvider(provider string) []string {
 	}
 	return models
 }
+
+// AllStats 返回每个模型的实时限流状态快照。
+// Key 格式 "provider/model"，便于前端展示和排序。
+func (mm *ModelManager) AllStats() map[string]LimiterStats {
+	mm.mu.RLock()
+	defer mm.mu.RUnlock()
+	result := make(map[string]LimiterStats, len(mm.translators))
+	for id, t := range mm.translators {
+		key := id.Provider + "/" + id.Model
+		// 如果这个 translator 是 rateLimitedTranslator，才有 Stats
+		if rlt, ok := t.(*rateLimitedTranslator); ok {
+			result[key] = rlt.Stats()
+		} else {
+			// 没限流配置时返回零值
+			result[key] = LimiterStats{}
+		}
+	}
+	return result
+}
