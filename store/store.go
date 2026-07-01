@@ -149,9 +149,10 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 显式限制单写：SQLite 只允许一个写者，多开只会让 busy_timeout 更容易触发。
-	// 读连接不受影响（modernc 会自动共享）。
-	db.SetMaxOpenConns(1)
+	// 保留多连接：WAL 允许多读者并发，busy_timeout 让写者排队等锁；
+	// 若强制 SetMaxOpenConns(1)，会与 LoadProviders 里嵌套 Query 死锁
+	// （外层 rows 还占着唯一连接时，for 循环里对同一 db 发第二个 Query 拿不到连接）。
+	db.SetMaxOpenConns(4)
 	s := &Store{db: db}
 	if err := s.Migrate(context.Background()); err != nil {
 		db.Close()
