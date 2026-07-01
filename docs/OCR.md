@@ -119,11 +119,23 @@ Content-Type: application/json
 
 **保留的**：table 的整体结构（`thead/tbody/tfoot/tr`）、每个 cell 的 `colspan`/`rowspan` 属性、非 td 的兄弟节点、`<br>` 换行、并发限制（默认 5 个 goroutine 处理 cell）
 
-**丢失的**（第一版折中）：
-- **单元格内的内联标签**（`<b>`, `<i>`, `<a>`, `<sub>`, `<img>` 等）——翻译时只提取文本，回填时也只写文本节点，wrapper 标签被丢弃。含内联样式的 cell 建议在 OCR 阶段展平成纯文本
-- **多层表头的 colspan/rowspan 语义**（属性本身还在，但模型看不到跨行/跨列关系）——目前每格独立翻译，缺整表上下文
+**内联标签**（`<b>` `<i>` `<em>` `<strong>` `<u>` `<sub>` `<sup>` `<code>` `<span>` `<mark>` `<small>` `<a>`）在 cell 里出现时会被 **tokenize** 成 `⟪N⟫...⟪/N⟫` 占位符送模型，翻译后 detokenize 还原。示例：
 
-第二版会考虑引入内联标签 tokenize/untokenize 保留样式，以及给数据表格加"整表 markdown 送模型"的可选路径（见 [`TRANSLATION.md`](./TRANSLATION.md) 里的 policy 讨论）。
+```
+输入：H<sub>2</sub>O + Ca<sup>2+</sup>
+送模型：H⟪1⟫2⟪/1⟫O + Ca⟪2⟫2+⟪/2⟫
+译文：H⟪1⟫2⟪/1⟫O + Ca⟪2⟫2+⟪/2⟫   （模型保留 placeholder）
+输出：H<sub>2</sub>O + Ca<sup>2+</sup>
+```
+
+模型看到含 placeholder 的 cell 时，服务端会在 input 前加一句提示："Preserve every ⟪N⟫...⟪/N⟫ marker exactly as-is..."。若模型仍然丢掉某个 placeholder（罕见），detokenize 只输出该 placeholder 内的文本，不留符号残渣。`<a>` 的 `href` 属性通过 record 保留。
+
+**cell 走保守 policy**：表格每个 cell 都走 `TranslateConservative`——不在内置中英文字典里的**短英文单词**（≤12 字符）会直接 skip 保留原文。这样"Alice/Bob/IL/May"之类的姓名列、州名缩写、月份不会被强行翻译。数据表格里典型的字段名（"Name/Age/Total"）能命中字典。段落文本（≥13 字符或含空格的短语）仍会送模型。
+
+**丢失的**（当前折中）：
+- 内联标签**跨越 cell 边界**的情形（HTML 里罕见）
+- 多层表头的 colspan/rowspan 语义（属性还在，但模型每格看不到跨行/跨列关系）
+- 单元格里的 `<img>`：图片本身保留，但 `alt` 属性目前不翻译
 
 ## Caption 编号保留
 
@@ -194,6 +206,7 @@ Content-Type: application/json
 
 | reason | 触发 |
 | --- | --- |
+| `already_in_target_lang` | 主导脚本已经是 target 语言（CJK/Latin/Cyrillic/Arabic/Hangul/Kana），跳过 |
 | `header_skipped` / `footer_skipped` / `figure_skipped` / `equation_skipped` | 类型被硬编码跳过 |
 | `reference_no_translatable_title` | Reference 条目没有引号包裹的文章标题可翻译 |
 | `reference_title_kept_original` | Reference 引号内容全部被 policy skip（如全数字/URL） |

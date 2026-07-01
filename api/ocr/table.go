@@ -24,10 +24,13 @@ func PrepareTable(htmlSource string) ([]string, func([]string) (string, error), 
 
 	var cells []*html.Node
 	var texts []string
+	var perCellRecords [][]inlineTagRecord
 	walk(root, func(n *html.Node) {
 		if n.Type == html.ElementNode && (n.DataAtom == atom.Td || n.DataAtom == atom.Th) {
 			cells = append(cells, n)
-			texts = append(texts, extractCellText(n))
+			text, records := tokenizeCell(n)
+			texts = append(texts, text)
+			perCellRecords = append(perCellRecords, records)
 		}
 	})
 
@@ -40,7 +43,7 @@ func PrepareTable(htmlSource string) ([]string, func([]string) (string, error), 
 			if t == "" || t == texts[i] {
 				continue
 			}
-			replaceCellContent(cell, t)
+			detokenizeInto(cell, t, perCellRecords[i])
 		}
 		return renderHTMLFragment(root)
 	}

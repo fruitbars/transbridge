@@ -128,6 +128,85 @@ func TestPrepareTableFinalizeRejectsLengthMismatch(t *testing.T) {
 	}
 }
 
+func TestPrepareTableTokenizesInlineTags(t *testing.T) {
+	src := `<table><tr><td>H<sub>2</sub>O and <b>strong</b> text</td></tr></table>`
+	texts, finalize, err := PrepareTable(src)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if len(texts) != 1 {
+		t.Fatalf("cells = %d, want 1", len(texts))
+	}
+	if !strings.Contains(texts[0], "⟪1⟫2⟪/1⟫") {
+		t.Errorf("expected placeholder for <sub>, got %q", texts[0])
+	}
+	if !strings.Contains(texts[0], "⟪2⟫strong⟪/2⟫") {
+		t.Errorf("expected placeholder for <b>, got %q", texts[0])
+	}
+	// 模型"翻译"：把 H → 氢，strong → 强壮，占位符原样保留
+	translated := strings.ReplaceAll(texts[0], "H", "氢")
+	translated = strings.ReplaceAll(translated, "strong", "强壮")
+	translated = strings.ReplaceAll(translated, "and", "和")
+	translated = strings.ReplaceAll(translated, "text", "文字")
+	out, err := finalize([]string{translated})
+	if err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+	if !strings.Contains(out, "<sub>2</sub>") {
+		t.Errorf("<sub>2</sub> not restored: %s", out)
+	}
+	if !strings.Contains(out, "<b>强壮</b>") {
+		t.Errorf("<b>强壮</b> not restored: %s", out)
+	}
+	if !strings.Contains(out, "氢") {
+		t.Errorf("outer text lost: %s", out)
+	}
+}
+
+func TestPrepareTableInlineTagsSurviveModelDroppedPlaceholder(t *testing.T) {
+	src := `<table><tr><td>H<sub>2</sub>O</td></tr></table>`
+	_, finalize, err := PrepareTable(src)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	// 模拟模型漏掉 placeholder：只剩纯文本
+	out, err := finalize([]string{"H2O"})
+	if err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+	if strings.Contains(out, "⟪") || strings.Contains(out, "⟫") {
+		t.Errorf("placeholders leaked into output: %s", out)
+	}
+	if !strings.Contains(out, "H2O") {
+		t.Errorf("plain-text fallback lost content: %s", out)
+	}
+}
+
+func TestPrepareTablePreservesAnchorHref(t *testing.T) {
+	src := `<table><tr><td>See <a href="https://example.com">the paper</a> for details.</td></tr></table>`
+	texts, finalize, err := PrepareTable(src)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if !strings.Contains(texts[0], "⟪1⟫the paper⟪/1⟫") {
+		t.Errorf("anchor not tokenized: %q", texts[0])
+	}
+	// "翻译" 保留 placeholder
+	translated := strings.Replace(texts[0], "See", "见", 1)
+	translated = strings.Replace(translated, "for details.", "了解详情。", 1)
+	translated = strings.Replace(translated, "the paper", "该论文", 1)
+	out, err := finalize([]string{translated})
+	if err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+	if !strings.Contains(out, `href="https://example.com"`) {
+		t.Errorf("href lost: %s", out)
+	}
+	if !strings.Contains(out, "该论文") {
+		t.Errorf("translated anchor text missing: %s", out)
+	}
+}
+
 func TestCountCellsMatchesPrepareTable(t *testing.T) {
 	src := `<table><tr><th>h1</th><th>h2</th></tr><tr><td>a</td><td>b</td></tr></table>`
 	n, err := CountCells(src)

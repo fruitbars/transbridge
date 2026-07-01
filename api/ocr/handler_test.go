@@ -12,8 +12,9 @@ import (
 )
 
 type fakeTranslator struct {
-	fn    func(text string) (string, error)
-	calls int32
+	fn                func(text string) (string, error)
+	calls             int32
+	conservativeCalls int32
 }
 
 func (f *fakeTranslator) Translate(ctx context.Context, provider, model, prompt, text, src, tgt string) (string, error) {
@@ -22,6 +23,13 @@ func (f *fakeTranslator) Translate(ctx context.Context, provider, model, prompt,
 		return f.fn(text)
 	}
 	return "ZH(" + text + ")", nil
+}
+
+// TranslateConservative 在测试里当作 policy=general 处理，但记录调用次数以区分。
+// 若测试想验证具体是 general 还是 conservative 路径，可查看 conservativeCalls。
+func (f *fakeTranslator) TranslateConservative(ctx context.Context, provider, model, prompt, text, src, tgt string) (string, error) {
+	atomic.AddInt32(&f.conservativeCalls, 1)
+	return f.Translate(ctx, provider, model, prompt, text, src, tgt)
 }
 
 func newTestHandler(t *testing.T, fn func(string) (string, error)) (*Handler, *fakeTranslator) {
@@ -83,6 +91,31 @@ func TestSkipsHeaderFooterFigureEquation(t *testing.T) {
 	}
 }
 
+func TestSkipsContentAlreadyInTargetLang(t *testing.T) {
+	h, fk := newTestHandler(t, nil)
+	resp := post(t, h, OCRRequest{
+		TargetLang: "zh",
+		Elements: []OCRElement{
+			{ID: "cn", Type: ElementText, Content: "这一段本来就是中文，不用翻。"},
+			{ID: "en", Type: ElementText, Content: "This one is English, should be translated."},
+		},
+	})
+	cn := mustFindByID(t, resp, "cn")
+	if cn.Translated {
+		t.Errorf("chinese content should not be translated, got %+v", cn)
+	}
+	if cn.Reason != "already_in_target_lang" {
+		t.Errorf("reason = %q, want already_in_target_lang", cn.Reason)
+	}
+	en := mustFindByID(t, resp, "en")
+	if !en.Translated {
+		t.Errorf("english content should be translated, got %+v", en)
+	}
+	if fk.calls != 1 {
+		t.Errorf("upstream calls = %d, want 1", fk.calls)
+	}
+}
+
 func TestReferenceTranslatesOnlyQuotedTitle(t *testing.T) {
 	h, fk := newTestHandler(t, nil)
 	resp := post(t, h, OCRRequest{
@@ -121,11 +154,11 @@ func TestReferenceTranslatesOnlyQuotedTitle(t *testing.T) {
 
 func TestCaptionPreservesPrefixAndTranslatesRest(t *testing.T) {
 	h, fk := newTestHandler(t, nil)
+	// 英文 caption → 中文
 	resp := post(t, h, OCRRequest{
 		TargetLang: "zh",
 		Elements: []OCRElement{
 			{ID: "en", Type: ElementFigureCaption, Content: "Figure 2. Sample distribution"},
-			{ID: "zh", Type: ElementTableCaption, Content: "表 3 实验结果"},
 			{ID: "prefix-only", Type: ElementFigureCaption, Content: "Figure 4."},
 		},
 	})
@@ -138,9 +171,19 @@ func TestCaptionPreservesPrefixAndTranslatesRest(t *testing.T) {
 		t.Errorf("rest not translated: %q", en.Content)
 	}
 
-	zh := mustFindByID(t, resp, "zh")
+	// 中文 caption → 英文（source language 需要真的与 target 不同才能触发翻译）
+	resp2 := post(t, h, OCRRequest{
+		TargetLang: "en",
+		Elements: []OCRElement{
+			{ID: "zh", Type: ElementTableCaption, Content: "表 3 实验结果"},
+		},
+	})
+	zh := mustFindByID(t, resp2, "zh")
 	if !strings.HasPrefix(zh.Content, "表 3") {
 		t.Errorf("cn prefix lost: %q", zh.Content)
+	}
+	if !strings.Contains(zh.Content, "ZH(实验结果)") {
+		t.Errorf("cn caption rest not translated: %q", zh.Content)
 	}
 
 	po := mustFindByID(t, resp, "prefix-only")
@@ -152,6 +195,23 @@ func TestCaptionPreservesPrefixAndTranslatesRest(t *testing.T) {
 	}
 	if fk.calls != 2 {
 		t.Errorf("upstream calls = %d, want 2", fk.calls)
+	}
+}
+
+func TestTableHTMLUsesConservativePolicy(t *testing.T) {
+	h, fk := newTestHandler(t, nil)
+	post(t, h, OCRRequest{
+		TargetLang: "zh",
+		Elements: []OCRElement{
+			{ID: "t", Type: ElementTable, ContentFormat: FormatHTML,
+				Content: `<table><tr><td>Alice</td><td>Bob</td></tr></table>`},
+		},
+	})
+	if fk.conservativeCalls == 0 {
+		t.Errorf("table cells should go through TranslateConservative, got %d conservative calls", fk.conservativeCalls)
+	}
+	if fk.calls-fk.conservativeCalls != 0 {
+		t.Errorf("table cells leaked to general Translate: general=%d conservative=%d", fk.calls-fk.conservativeCalls, fk.conservativeCalls)
 	}
 }
 

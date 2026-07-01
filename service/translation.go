@@ -44,8 +44,18 @@ func NewTranslationService(modelManager *translator.ModelManager, cache cache.Ca
 	}
 }
 
-// Translate 处理翻译请求，自动处理缓存逻辑
+// Translate 处理翻译请求，自动处理缓存逻辑。使用 general 策略。
 func (s *TranslationService) Translate(ctx context.Context, provider, model, promptTemplate, text, sourceLang, targetLang string) (string, error) {
+	return s.translateWithMode(ctx, provider, model, promptTemplate, text, sourceLang, targetLang, policyModeGeneral)
+}
+
+// TranslateConservative 与 Translate 相同，但走保守策略：不在词典里的短英文单词（≤12 字符）会被 skip，
+// 保留原文。适合表格单元格场景，避免把姓名、缩写、单位符号送模型翻译。
+func (s *TranslationService) TranslateConservative(ctx context.Context, provider, model, promptTemplate, text, sourceLang, targetLang string) (string, error) {
+	return s.translateWithMode(ctx, provider, model, promptTemplate, text, sourceLang, targetLang, policyModeConservative)
+}
+
+func (s *TranslationService) translateWithMode(ctx context.Context, provider, model, promptTemplate, text, sourceLang, targetLang string, mode translationPolicyMode) (string, error) {
 	if text == "" {
 		return "", fmt.Errorf("text is required")
 	}
@@ -57,7 +67,7 @@ func (s *TranslationService) Translate(ctx context.Context, provider, model, pro
 
 	startTime := time.Now()
 
-	policy := applyTranslationPolicy(text, targetLang)
+	policy := applyTranslationPolicyWithMode(text, targetLang, mode)
 	if policy.Decision == decisionSkip || policy.Decision == decisionDict {
 		s.logTranslation(text, policy.Output, sourceLang, targetLang, "", string(policy.Decision), policy.Reason, "", false, time.Since(startTime).Milliseconds())
 		s.logRequest(ctx, text, policy.Output, sourceLang, targetLang, "", string(policy.Decision), "", false, true, "", time.Since(startTime).Milliseconds())

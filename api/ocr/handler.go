@@ -16,6 +16,7 @@ import (
 // service.TranslationService 天然满足。
 type TranslatorFn interface {
 	Translate(ctx context.Context, provider, model, promptTemplate, text, sourceLang, targetLang string) (string, error)
+	TranslateConservative(ctx context.Context, provider, model, promptTemplate, text, sourceLang, targetLang string) (string, error)
 }
 
 // Handler 处理 /ocr/translate 请求。逐元素按类型 + content_format 分发：
@@ -144,6 +145,15 @@ func (h *Handler) processElement(ctx context.Context, e OCRElement, promptTempla
 		return h.translateReference(ctx, base, e.Content, promptTemplate, srcLang, tgtLang)
 	}
 
+	// 语言检测：如果 content 主导脚本已经是目标语言，跳过（防止中文段落被误翻）。
+	// 表格 HTML 例外：每个 cell 单独检测，整块判定会让姓名列一票否决。
+	if !(et == ElementTable && e.ContentFormat == FormatHTML) {
+		if contentAlreadyInTargetLang(e.Content, tgtLang) {
+			base.Reason = "already_in_target_lang"
+			return base
+		}
+	}
+
 	// caption：保留 "Figure 2." / "表 3" 前置编号
 	if et == ElementTableCaption || et == ElementFigureCaption {
 		return h.translateCaption(ctx, base, e, promptTemplate, srcLang, tgtLang)
@@ -265,6 +275,9 @@ func (h *Handler) translateWithSuffix(ctx context.Context, base OCRTranslation, 
 	return base
 }
 
+// placeholderInputPrefix 给含 ⟪N⟫...⟪/N⟫ 占位符的 cell 加前缀，避免模型改写或删除标记。
+const placeholderInputPrefix = "Preserve every ⟪N⟫...⟪/N⟫ marker exactly as-is (they mark inline formatting to be restored later); translate only the surrounding text.\n\n"
+
 func (h *Handler) translateTableHTML(ctx context.Context, base OCRTranslation, e OCRElement, promptTemplate, srcLang, tgtLang string) OCRTranslation {
 	texts, finalize, err := PrepareTable(e.Content)
 	if err != nil {
@@ -288,6 +301,10 @@ func (h *Handler) translateTableHTML(ctx context.Context, base OCRTranslation, e
 			translated[i] = ""
 			continue
 		}
+		if contentAlreadyInTargetLang(cellText, tgtLang) {
+			translated[i] = ""
+			continue
+		}
 		wg.Add(1)
 		go func(idx int, srcText string) {
 			defer wg.Done()
@@ -297,7 +314,12 @@ func (h *Handler) translateTableHTML(ctx context.Context, base OCRTranslation, e
 				return
 			}
 			defer func() { <-sem }()
-			out, err := h.translationService.Translate(ctx, "", "", promptTemplate, srcText, srcLang, tgtLang)
+			modelInput := srcText
+			hasPlaceholder := strings.Contains(srcText, placeholderOpen)
+			if hasPlaceholder {
+				modelInput = placeholderInputPrefix + srcText
+			}
+			out, err := h.translationService.TranslateConservative(ctx, "", "", promptTemplate, modelInput, srcLang, tgtLang)
 			if err != nil {
 				anyErrMu.Lock()
 				if anyErr == "" {
@@ -306,6 +328,9 @@ func (h *Handler) translateTableHTML(ctx context.Context, base OCRTranslation, e
 				anyErrMu.Unlock()
 				translated[idx] = ""
 				return
+			}
+			if hasPlaceholder {
+				out = strings.TrimPrefix(out, placeholderInputPrefix)
 			}
 			if out == srcText {
 				translated[idx] = ""
