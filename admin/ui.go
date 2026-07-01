@@ -475,6 +475,18 @@ function openModelDialog(initial){
           '<div class="field"><label>Max Tokens</label><input id="d_max_tokens" type="number" value="'+(m.max_tokens || 2000)+'"></div>'+
           '<div class="field"><label>Temperature</label><input id="d_temperature" type="number" step="0.1" value="'+(m.temperature ?? 0.3)+'"></div>'+
         '</div>'+
+        '<div class="field" style="margin-top:10px"><label>限流（模型级） <span class="muted">留空或 0 表示不限制</span></label></div>'+
+        '<div class="grid cols-3">'+
+          '<div class="field"><label>并发数</label><input id="d_rate_concurrent" type="number" placeholder="不限" value="'+((m.rate_limit && m.rate_limit.max_concurrent) || '')+'"></div>'+
+          '<div class="field"><label>QPS</label><input id="d_rate_qps" type="number" placeholder="不限" value="'+((m.rate_limit && m.rate_limit.qps) || '')+'"></div>'+
+          '<div class="field"><label>QPM</label><input id="d_rate_qpm" type="number" placeholder="不限" value="'+((m.rate_limit && m.rate_limit.qpm) || '')+'"></div>'+
+        '</div>'+
+        '<div class="field" style="margin-top:10px"><label>限流（供应商级，同 provider 所有模型共享） <span class="muted">留空或 0 表示不限制</span></label></div>'+
+        '<div class="grid cols-3">'+
+          '<div class="field"><label>并发数</label><input id="d_prov_rate_concurrent" type="number" placeholder="不限" value="'+((m.provider_rate_limit && m.provider_rate_limit.max_concurrent) || '')+'"></div>'+
+          '<div class="field"><label>QPS</label><input id="d_prov_rate_qps" type="number" placeholder="不限" value="'+((m.provider_rate_limit && m.provider_rate_limit.qps) || '')+'"></div>'+
+          '<div class="field"><label>QPM</label><input id="d_prov_rate_qpm" type="number" placeholder="不限" value="'+((m.provider_rate_limit && m.provider_rate_limit.qpm) || '')+'"></div>'+
+        '</div>'+
         '<div class="field" style="margin-top:10px"><label>状态</label><select id="d_enabled"><option value="true"'+(m.enabled!==false?' selected':'')+'>启用</option><option value="false"'+(m.enabled===false?' selected':'')+'>禁用</option></select></div>'+
       '</div>'+
       '<div class="m-f"><button class="btn ghost" id="d_cancel">取消</button><button class="btn" id="d_save">保存</button></div>'+
@@ -503,6 +515,16 @@ function openModelDialog(initial){
       max_tokens: Number($('d_max_tokens').value||2000),
       temperature: Number($('d_temperature').value||0.3),
       enabled: $('d_enabled').value==='true',
+      rate_limit: {
+        max_concurrent: Number($('d_rate_concurrent').value||0),
+        qps: Number($('d_rate_qps').value||0),
+        qpm: Number($('d_rate_qpm').value||0),
+      },
+      provider_rate_limit: {
+        max_concurrent: Number($('d_prov_rate_concurrent').value||0),
+        qps: Number($('d_prov_rate_qps').value||0),
+        qpm: Number($('d_prov_rate_qpm').value||0),
+      },
     };
     $('d_save').disabled = true;
     try{
