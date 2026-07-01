@@ -72,6 +72,8 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request, path string) 
 		h.deleteModel(w, r)
 	case path == "/models/test" && r.Method == http.MethodPost:
 		h.testModel(w, r)
+	case path == "/models/toggle" && r.Method == http.MethodPost:
+		h.toggleModel(w, r)
 	case path == "/tokens" && r.Method == http.MethodGet:
 		tokens, err := h.store.ListTokenViews(r.Context())
 		h.write(w, tokens, err)
@@ -277,6 +279,42 @@ func (h *Handler) canDeleteModel(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 	return true
+}
+
+func (h *Handler) toggleModel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	enabled, err := h.store.GetModelByID(r.Context(), id)
+	if err != nil {
+		h.error(w, http.StatusNotFound, err)
+		return
+	}
+	// 若将从启用切到禁用，检查这是不是最后一个启用的 model，避免整站没模型可用
+	if enabled {
+		models, err := h.store.ListModels(r.Context())
+		if err != nil {
+			h.error(w, http.StatusInternalServerError, err)
+			return
+		}
+		enabledCount := 0
+		for _, m := range models {
+			if m.Enabled {
+				enabledCount++
+			}
+		}
+		if enabledCount <= 1 {
+			h.errorText(w, http.StatusBadRequest, "cannot disable the last enabled model")
+			return
+		}
+	}
+	if err := h.store.SetModelEnabled(r.Context(), id, !enabled); err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+	h.reloadModels(w, r.Context())
 }
 
 func (h *Handler) testModel(w http.ResponseWriter, r *http.Request) {

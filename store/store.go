@@ -481,6 +481,24 @@ func (s *Store) DeleteModel(ctx context.Context, id int64) error {
 	return err
 }
 
+// SetModelEnabled 只翻转 enabled 字段，不动其它任何配置。
+// 供 /admin/api/models/toggle 使用，一键启用/禁用。
+func (s *Store) SetModelEnabled(ctx context.Context, id int64, enabled bool) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `UPDATE models SET enabled = ?, updated_at = ? WHERE id = ?`, boolInt(enabled), now, id)
+	return err
+}
+
+// GetModelByID 拉一条 model 详情用于状态回读（当前只用于 toggle handler 校验存在性与获取当前 enabled）。
+func (s *Store) GetModelByID(ctx context.Context, id int64) (bool, error) {
+	var enabled int
+	err := s.db.QueryRowContext(ctx, `SELECT enabled FROM models WHERE id = ?`, id).Scan(&enabled)
+	if err != nil {
+		return false, err
+	}
+	return enabled == 1, nil
+}
+
 func (s *Store) DeleteModelByName(ctx context.Context, provider, apiURL, model string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM models WHERE name = ? AND provider_id IN (SELECT id FROM providers WHERE provider = ? AND api_url = ?)`, model, provider, apiURL)
 	return err

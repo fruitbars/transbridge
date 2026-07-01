@@ -398,6 +398,7 @@ function renderModels(){
       '<td>'+esc(r.temperature ?? '-')+'</td>'+
       '<td style="white-space:nowrap">'+
         '<button class="btn ghost sm" data-act="test-model" data-id="'+r.id+'">测试</button> '+
+        '<button class="btn ghost sm" data-act="toggle-model" data-id="'+r.id+'">'+(r.enabled?'禁用':'启用')+'</button> '+
         '<button class="btn ghost sm" data-act="edit-model" data-id="'+r.id+'">编辑</button> '+
         '<button class="btn ghost sm" data-act="del-model" data-id="'+r.id+'">删除</button>'+
       '</td>'+
@@ -429,6 +430,7 @@ document.addEventListener('click', e => {
   const id = Number(btn.dataset.id);
   switch(btn.dataset.act){
     case 'test-model': testModelById(id); break;
+    case 'toggle-model': toggleModel(id); break;
     case 'edit-model': editModelById(id); break;
     case 'del-model': {
       const m = state.data.models.find(x => x.id === id);
@@ -457,11 +459,11 @@ function openModelDialog(initial){
       '<div class="m-h">'+(isEdit?'编辑模型':'新建模型')+'</div>'+
       '<div class="m-b">'+
         '<div class="grid cols-2">'+
-          '<div class="field"><label>Provider</label><input id="d_provider" value="'+esc(m.provider||'openai')+'" placeholder="openai"></div>'+
-          '<div class="field"><label>模型名 <span class="muted">(用于路由)</span></label><input id="d_name" value="'+esc(m.name||'')+'" placeholder="gpt-4o-mini"></div>'+
+          '<div class="field"><label>Provider'+(isEdit?' <span class="muted">(不可修改)</span>':'')+'</label><input id="d_provider" value="'+esc(m.provider||'openai')+'" placeholder="openai"'+(isEdit?' disabled':'')+'></div>'+
+          '<div class="field"><label>模型名'+(isEdit?' <span class="muted">(不可修改)</span>':' <span class="muted">(用于路由)</span>')+'</label><input id="d_name" value="'+esc(m.name||'')+'" placeholder="gpt-4o-mini"'+(isEdit?' disabled':'')+'></div>'+
         '</div>'+
         '<div class="field" style="margin-top:10px"><label>API URL <span class="muted">(完整地址或仅 base，自动补全 /chat/completions)</span></label>'+
-          '<input id="d_api_url" value="'+esc(url)+'" placeholder="https://api.openai.com/v1/chat/completions">'+
+          '<input id="d_api_url" value="'+esc(url)+'" placeholder="https://api.openai.com/v1/chat/completions"'+(isEdit?' disabled':'')+'>'+
           '<span class="muted" id="d_url_hint" style="font-size:11px">'+esc(urlHint)+'</span>'+
         '</div>'+
         '<div class="field" style="margin-top:10px"><label>API Key'+
@@ -540,6 +542,9 @@ function openModelDialog(initial){
 async function deleteModel(id, label){
   if(!await confirmDlg('删除模型','确定删除 ' + label + '？此操作不可撤销。')) return;
   try{ await req('/models?id='+id,{method:'DELETE'}); toast('已删除','success'); await loadModels(); }catch(e){ toast(e.message,'error'); }
+}
+async function toggleModel(id){
+  try{ await req('/models/toggle?id='+id,{method:'POST'}); await loadModels(); }catch(e){ toast(e.message,'error'); }
 }
 
 
