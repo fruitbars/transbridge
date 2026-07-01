@@ -132,11 +132,16 @@ func (h *Handler) processElement(ctx context.Context, e OCRElement, promptTempla
 	}
 	base := OCRTranslation{ID: e.ID, Type: et, ContentFormat: e.ContentFormat, Content: e.Content}
 
-	// 直接 skip 的类型：页眉/页脚/图/公式/参考文献条目
+	// 直接 skip 的类型：页眉/页脚/图/公式
 	switch et {
-	case ElementHeader, ElementFooter, ElementFigure, ElementEquation, ElementReference:
+	case ElementHeader, ElementFooter, ElementFigure, ElementEquation:
 		base.Reason = fmt.Sprintf("%s_skipped", et)
 		return base
+	}
+
+	// reference：只翻译引号包裹的文章标题；作者/期刊名/DOI/卷号原样保留
+	if et == ElementReference {
+		return h.translateReference(ctx, base, e.Content, promptTemplate, srcLang, tgtLang)
 	}
 
 	// caption：保留 "Figure 2." / "表 3" 前置编号
@@ -181,6 +186,41 @@ func (h *Handler) translateMarkdown(ctx context.Context, base OCRTranslation, te
 	}
 	base.Content = translated
 	base.Translated = true
+	return base
+}
+
+// translateReference 只翻译引号包裹的文章标题片段。作者、期刊名、DOI、卷号、页码原样保留。
+// 若找不到任何引号包裹段，返回 reason: reference_no_translatable_title（不调模型）。
+func (h *Handler) translateReference(ctx context.Context, base OCRTranslation, text, promptTemplate, srcLang, tgtLang string) OCRTranslation {
+	if strings.TrimSpace(text) == "" {
+		base.Reason = "blank"
+		return base
+	}
+	segs := extractQuotedSegments(text)
+	if len(segs) == 0 {
+		base.Reason = "reference_no_translatable_title"
+		return base
+	}
+	replacements := make([]string, len(segs))
+	var anyTranslated bool
+	for i, seg := range segs {
+		translated, err := h.translationService.Translate(ctx, "", "", promptTemplate, seg.Content, srcLang, tgtLang)
+		if err != nil {
+			// 单段失败保留原文继续处理其余段，最终 error 汇总在 base.Error
+			base.Error = err.Error()
+			replacements[i] = ""
+			continue
+		}
+		replacements[i] = translated
+		if translated != seg.Content {
+			anyTranslated = true
+		}
+	}
+	base.Content = applyQuotedReplacements(text, segs, replacements)
+	base.Translated = anyTranslated
+	if !anyTranslated && base.Error == "" {
+		base.Reason = "reference_title_kept_original"
+	}
 	return base
 }
 

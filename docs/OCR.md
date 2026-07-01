@@ -60,10 +60,26 @@ Content-Type: application/json
 | `table` + `content_format=text` | 视作普通文本 | 是 | 同上 |
 | `table_caption`, `figure_caption` | 剥离前置编号（`Figure 2.` / `表 3`），只翻后半再拼回 | 是 | `caption_prefix_only` |
 | `header`, `footer` | 直接跳过，原样返回 | 否 | `header_skipped` / `footer_skipped` |
-| `figure`, `equation`, `reference` | 直接跳过 | 否 | `figure_skipped` / `equation_skipped` / `reference_skipped` |
+| `figure`, `equation` | 直接跳过 | 否 | `figure_skipped` / `equation_skipped` |
+| `reference` | 只翻引号内的文章标题；其他部分（作者/期刊/DOI/卷号/页码）原样保留 | 是（若有引号内容） | `reference_no_translatable_title` / `reference_title_kept_original` |
 | 其他 type | 退化到 text | 是（一般） | — |
 
-**为什么 reference 一律跳过**：论文参考文献条目主体是人名、期刊名、年份、DOI，翻译只会破坏检索可用性。如果你的场景需要翻译 reference（比如书目摘要），把它当作 `text` 类型传即可。
+### 为什么 reference 特殊处理
+
+论文参考文献条目里的**人名、期刊/会议名、年份、卷期号、页码、DOI** 都不该翻译——翻了反而破坏检索。真正值得翻的是**文章标题**。IEEE、GB/T 7714、大多数中文期刊格式的文章标题都**用引号包裹**：
+
+- IEEE：`J. Smith, "A novel approach to translation," IEEE Trans. Comput., vol. 42, ...`
+- GB/T 7714：`张三. "一种新颖的翻译方法"[J]. 计算机学报, 2024, ...`
+
+服务端因此只识别引号（ASCII `"..."`、Unicode `"..."`、法文 `«...»`、日文 `「...」`/`『...』`），把引号包裹段送模型，用译文原地替换。作者、期刊名、DOI 等自然不在引号里，被完整保留。
+
+**边界行为**：
+
+- 没引号（例如 APA 格式 `Smith, J. (2024). A novel approach ...`）→ 返回 `reason: reference_no_translatable_title`，不调模型
+- 未闭合引号（可能是 OCR 漏识别）→ 忽略该引号，其他段照常处理
+- ASCII 单引号（如 `Smith's`）→ **不识别**，避免误吃缩写和所有格
+
+若这套启发式和你的场景冲突（例如你的引用格式恰好不带引号，但你确实需要翻译），把该条目当作 `text` 类型传，让它走完整 policy 管线。
 
 ## `content_format` 分支
 
@@ -178,7 +194,9 @@ Content-Type: application/json
 
 | reason | 触发 |
 | --- | --- |
-| `header_skipped` / `footer_skipped` / `figure_skipped` / `equation_skipped` / `reference_skipped` | 类型被硬编码跳过 |
+| `header_skipped` / `footer_skipped` / `figure_skipped` / `equation_skipped` | 类型被硬编码跳过 |
+| `reference_no_translatable_title` | Reference 条目没有引号包裹的文章标题可翻译 |
+| `reference_title_kept_original` | Reference 引号内容全部被 policy skip（如全数字/URL） |
 | `blank` | content trim 后为空 |
 | `caption_prefix_only` | Caption 只有编号 |
 | `html_only_supported_for_table` | 非 `table` 类型传 `content_format=html` |

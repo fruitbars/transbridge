@@ -58,7 +58,7 @@ func mustFindByID(t *testing.T, resp OCRResponse, id string) OCRTranslation {
 	return OCRTranslation{}
 }
 
-func TestSkipsHeaderFooterFigureEquationReference(t *testing.T) {
+func TestSkipsHeaderFooterFigureEquation(t *testing.T) {
 	h, fk := newTestHandler(t, nil)
 	resp := post(t, h, OCRRequest{
 		TargetLang: "zh",
@@ -67,10 +67,9 @@ func TestSkipsHeaderFooterFigureEquationReference(t *testing.T) {
 			{ID: "f", Type: ElementFooter, Content: "Footer"},
 			{ID: "fig", Type: ElementFigure, Content: ""},
 			{ID: "eq", Type: ElementEquation, Content: "E=mc^2"},
-			{ID: "ref", Type: ElementReference, Content: "Doe J. 2024"},
 		},
 	})
-	for _, id := range []string{"h", "f", "fig", "eq", "ref"} {
+	for _, id := range []string{"h", "f", "fig", "eq"} {
 		tr := mustFindByID(t, resp, id)
 		if tr.Translated {
 			t.Errorf("%s should be skipped", id)
@@ -81,6 +80,42 @@ func TestSkipsHeaderFooterFigureEquationReference(t *testing.T) {
 	}
 	if fk.calls != 0 {
 		t.Errorf("upstream calls = %d, want 0", fk.calls)
+	}
+}
+
+func TestReferenceTranslatesOnlyQuotedTitle(t *testing.T) {
+	h, fk := newTestHandler(t, nil)
+	resp := post(t, h, OCRRequest{
+		TargetLang: "zh",
+		Elements: []OCRElement{
+			{ID: "ieee", Type: ElementReference,
+				Content: `[1] J. Smith, "A novel approach to translation," IEEE Trans. Comput., vol. 42, no. 3, pp. 123-145, 2024, doi: 10.1109/TC.2024.1234567.`},
+			{ID: "notitle", Type: ElementReference,
+				Content: `Smith J. IEEE Trans., 2024, doi: 10.x/y.`},
+		},
+	})
+
+	ieee := mustFindByID(t, resp, "ieee")
+	if !ieee.Translated {
+		t.Fatalf("ieee should be translated, got %+v", ieee)
+	}
+	if !strings.Contains(ieee.Content, "ZH(A novel approach to translation,)") {
+		t.Errorf("quoted title not translated: %q", ieee.Content)
+	}
+	if !strings.Contains(ieee.Content, "IEEE Trans. Comput.") || !strings.Contains(ieee.Content, "10.1109/TC.2024.1234567") {
+		t.Errorf("journal name or DOI corrupted: %q", ieee.Content)
+	}
+
+	notitle := mustFindByID(t, resp, "notitle")
+	if notitle.Translated {
+		t.Errorf("reference without quoted title should not be translated: %+v", notitle)
+	}
+	if notitle.Reason != "reference_no_translatable_title" {
+		t.Errorf("reason = %q, want reference_no_translatable_title", notitle.Reason)
+	}
+
+	if fk.calls != 1 {
+		t.Errorf("upstream calls = %d, want 1 (only the ieee title)", fk.calls)
 	}
 }
 
