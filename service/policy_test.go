@@ -23,6 +23,35 @@ func TestTranslationPolicySkipsNonLinguisticText(t *testing.T) {
 	}
 }
 
+func TestTranslationPolicyDoesNotSkipEnglishPhrases(t *testing.T) {
+	cases := []string{
+		"I am not good",
+		"i am not good",
+		"how are you",
+		"kg m",
+		"good morning",
+	}
+	for _, tc := range cases {
+		result := applyTranslationPolicy(tc, "zh-CN")
+		if result.Decision == decisionSkip {
+			t.Fatalf("%q was skipped (reason=%s), expected to reach the model", tc, result.Reason)
+		}
+	}
+}
+
+func TestTranslationPolicyStillSkipsSpacedUnits(t *testing.T) {
+	cases := []string{
+		"kg m2",
+		"kg m^-2",
+	}
+	for _, tc := range cases {
+		result := applyTranslationPolicy(tc, "zh-CN")
+		if result.Decision != decisionSkip {
+			t.Fatalf("%q decision = %s, want skip", tc, result.Decision)
+		}
+	}
+}
+
 func TestTranslationPolicyUsesCommonTermDictionary(t *testing.T) {
 	result := applyTranslationPolicy(" total ", "zh-CN")
 	if result.Decision != decisionDict {

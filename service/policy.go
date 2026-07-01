@@ -36,7 +36,7 @@ var (
 	speciesPattern         = regexp.MustCompile(`^\s*[A-Z]\.\s+[a-z][a-z-]+(\s+[a-z][a-z-]+)?\s*$`)
 	chemicalPattern        = regexp.MustCompile(`^\s*(?:[A-Z][a-z]?\d*){2,}(?:[·.](?:[A-Z][a-z]?\d*)+)*(\^?\d*[+\-−])?\s*$`)
 	chargedIonPattern      = regexp.MustCompile(`^\s*(?:[A-Z][a-z]?\d*)+(\^?\d+)?[+\-−]\s*$`)
-	compoundUnitPattern    = regexp.MustCompile(`(?i)^\s*[µμa-z]+(\^?[+\-−]?\d+)?(\s*[/.·]\s*[µμa-z]+(\^?[+\-−]?\d+)?|\s+[µμa-z]+[+\-−]?\d*)+\s*$`)
+	compoundUnitPattern    = regexp.MustCompile(`(?i)^\s*[µμa-z]+(\^?[+\-−]?\d+)?(\s*[/.·]\s*[µμa-z]+(\^?[+\-−]?\d+)?|\s+[µμa-z]+(\^?[+\-−]?\d+|[+\-−]\d*))+\s*$`)
 	geneProteinPattern     = regexp.MustCompile(`^\s*([A-Z]{2,}[A-Z0-9-]*\d+|[a-z]\d+|[A-Z]{1,5}-[A-Za-z0-9α-ωΑ-Ω]+|ATCC\s+\d+)\s*$`)
 	dateMoneyPattern       = regexp.MustCompile(`(?i)^\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|Q[1-4]|FY\d{2,4}|[$€¥£]\s*[\d,.]+|[A-Z]{3}\s+[\d,.]+)\s*$`)
 	romanPattern           = regexp.MustCompile(`^\s*[IVXLCDM]+\s*$`)
