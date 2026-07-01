@@ -101,8 +101,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.sendError(w, "elements is required", http.StatusBadRequest)
 		return
 	}
-	if len(req.Elements) > 500 {
-		h.sendError(w, "too many elements (max 500)", http.StatusBadRequest)
+	if len(req.Elements) > 2000 {
+		h.sendError(w, "too many elements (max 2000)", http.StatusBadRequest)
 		return
 	}
 

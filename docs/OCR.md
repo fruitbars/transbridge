@@ -224,7 +224,7 @@ Content-Type: application/json
 
 上游模型的并发和 QPS 限速由 provider 级的 rate limit 处理（见 admin 里的 `provider_rate_limit`），/ocr/translate 不做额外限制。
 
-请求上限 500 个 elements，超过返回 400。
+请求上限 2000 个 elements，超过返回 400。
 
 ## 与其他接口的关系
 
