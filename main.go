@@ -274,8 +274,11 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 	return &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		// 5 分钟以覆盖 /ocr/translate 和 /immersivel 这类批量接口：单请求可能含
+		// 几十到几百个 element，每个又要打上游模型，累计极易超过 15s。上游模型的
+		// per-request 超时由 provider.timeout 控制，这里只保证 TCP 连接不被服务端主动切断。
+		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  60 * time.Second,
 	}
 }
