@@ -14,6 +14,7 @@ import (
 	"time"
 	"transbridge/admin"
 	"transbridge/api/deeplx/translate_handler"
+	"transbridge/api/ocr"
 	"transbridge/api/openai"
 	"transbridge/cache"
 	"transbridge/config"
@@ -186,6 +187,20 @@ func setupServer(cfg *config.Config, translationService *service.TranslationServ
 	mux.HandleFunc("/immersivel",
 		middleware.Chain(
 			translationHandler.HandleImmersiveLTranslation,
+			middleware.Recovery,
+			middleware.Logger,
+			middleware.CORS,
+		),
+	)
+
+	ocrHandler := ocr.NewHandler(translationService, ocr.HandlerConfig{
+		AuthValidator:  makeAuthValidator(adminStore),
+		PromptProvider: makePromptProvider(adminStore, cfg.Prompt.Template),
+		DefaultPrompt:  cfg.Prompt.Template,
+	})
+	mux.HandleFunc("/ocr/translate",
+		middleware.Chain(
+			ocrHandler.ServeHTTP,
 			middleware.Recovery,
 			middleware.Logger,
 			middleware.CORS,
