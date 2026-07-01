@@ -170,7 +170,9 @@ const indexHTML = `<!doctype html>
           <div class="card-b">
             <div class="grid cols-auto">
               <div class="field"><label>备注</label><input id="t_name" placeholder="用于何处"></div>
-              <div class="field"><label>Token</label><input id="t_token" placeholder="tr-..."></div>
+              <div class="field"><label>Token</label>
+                <div style="display:flex;gap:6px"><input id="t_token" placeholder="tr-..."><button type="button" class="btn ghost sm" onclick="genToken()">生成</button></div>
+              </div>
               <div class="field"><label>Scope</label><select id="t_scope"><option value="translate">translate</option><option value="openai">openai</option><option value="all">all</option></select></div>
               <div class="field"><label>&nbsp;</label><button class="btn" onclick="createToken()">添加</button></div>
             </div>
@@ -438,6 +440,9 @@ document.addEventListener('click', e => {
       deleteToken(id, t ? (t.name || t.token || '#'+id) : '#'+id);
       break;
     }
+    case 'reveal-token': revealToken(id); break;
+    case 'copy-token': copyToken(id); break;
+    case 'toggle-token': toggleToken(id); break;
     case 'activate-prompt': activatePrompt(id); break;
   }
 });
@@ -531,17 +536,77 @@ function renderTokens(){
   if(rows.length === 0){ host.innerHTML = emptyState(q?'没有匹配的 token':'还没有 token'); return; }
   host.innerHTML = '<div class="tbl-wrap"><table><thead><tr>'+
     thSort('tokens','id','ID') + thSort('tokens','name','备注') + thSort('tokens','scope','Scope') +
+    '<th>Token</th>' +
     '<th>状态</th>' + thSort('tokens','request_count','调用次数') + '<th>最近使用</th><th></th>'+
     '</tr></thead><tbody>' +
     rows.map(r => '<tr>'+
       '<td>'+r.id+'</td>'+
       '<td>'+esc(r.name||'-')+'</td>'+
       '<td><span class="pill">'+esc(r.scope)+'</span></td>'+
+      '<td>'+esc(r.token)+'</td>'+
       '<td><span class="pill">'+dot(r.enabled)+(r.enabled?'启用':'禁用')+'</span></td>'+
       '<td>'+(r.request_count||0)+'</td>'+
       '<td title="'+esc(r.last_used_at||'')+'" class="muted">'+esc(r.last_used_at?relTime(r.last_used_at):'未使用')+'</td>'+
-      '<td><button class="btn ghost sm" data-act="del-token" data-id="'+r.id+'">删除</button></td>'+
+      '<td style="white-space:nowrap">'+
+        '<button class="btn ghost sm" data-act="reveal-token" data-id="'+r.id+'">查看</button> '+
+        '<button class="btn ghost sm" data-act="copy-token" data-id="'+r.id+'">复制</button> '+
+        '<button class="btn ghost sm" data-act="toggle-token" data-id="'+r.id+'">'+(r.enabled?'禁用':'启用')+'</button> '+
+        '<button class="btn ghost sm" data-act="del-token" data-id="'+r.id+'">删除</button>'+
+      '</td>'+
     '</tr>').join('') + '</tbody></table></div>';
+}
+function genToken(){
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join('');
+  $('t_token').value = 'tr-' + hex.slice(0,8) + '-' + hex.slice(8,12) + '-' + hex.slice(12,16) + '-' + hex.slice(16,20) + '-' + hex.slice(20);
+}
+function showTokenDlg(token){
+  const host = $('modal-host');
+  host.innerHTML = '<div class="modal-bd"><div class="modal">'+
+    '<div class="m-h">Token 明文</div>'+
+    '<div class="m-b"><div class="field"><input id="rv_val" readonly value="'+esc(token)+'" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"></div></div>'+
+    '<div class="m-f"><button class="btn ghost" id="rv_close">关闭</button><button class="btn" id="rv_copy">复制</button></div>'+
+    '</div></div>';
+  const close = ()=>{ host.innerHTML=''; document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if(e.key==='Escape') close(); };
+  $('rv_close').onclick = close;
+  host.querySelector('.modal-bd').onclick = e => { if(e.target===e.currentTarget) close(); };
+  $('rv_copy').onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(token); toast('已复制','success'); }
+    catch(e){ $('rv_val').select(); document.execCommand('copy'); toast('已复制','success'); }
+  };
+  document.addEventListener('keydown', onKey);
+  setTimeout(()=>{ $('rv_val').focus(); $('rv_val').select(); }, 0);
+}
+async function revealToken(id){
+  try{
+    const r = await req('/tokens/reveal?id='+id);
+    showTokenDlg(r.token);
+  }catch(e){ toast(e.message,'error'); }
+}
+async function copyToken(id){
+  try{
+    const r = await req('/tokens/reveal?id='+id);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(r.token);
+      toast('已复制到剪贴板','success');
+    }else{
+      const ta = document.createElement('textarea');
+      ta.value = r.token; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); toast('已复制到剪贴板','success'); }
+      catch(e){ toast('复制失败，请手动复制','warn'); }
+      ta.remove();
+    }
+  }catch(e){ toast(e.message,'error'); }
+}
+async function toggleToken(id){
+  try{
+    const r = await req('/tokens/toggle?id='+id, {method:'POST'});
+    toast(r.enabled ? '已启用' : '已禁用', 'success');
+    await loadTokens();
+  }catch(e){ toast(e.message,'error'); }
 }
 async function createToken(){
   try{

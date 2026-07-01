@@ -519,6 +519,25 @@ func (s *Store) ListTokenViews(ctx context.Context) ([]TokenView, error) {
 	return views, nil
 }
 
+func (s *Store) GetTokenByID(ctx context.Context, id int64) (*Token, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, token, scope, enabled, request_count, last_used_at, created_at, updated_at FROM tokens WHERE id = ?`, id)
+	var t Token
+	var enabled int
+	var last sql.NullString
+	var created, updated string
+	if err := row.Scan(&t.ID, &t.Name, &t.Token, &t.Scope, &enabled, &t.RequestCount, &last, &created, &updated); err != nil {
+		return nil, err
+	}
+	t.Enabled = enabled == 1
+	t.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	t.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+	if last.Valid {
+		parsed, _ := time.Parse(time.RFC3339Nano, last.String)
+		t.LastUsedAt = &parsed
+	}
+	return &t, nil
+}
+
 func (s *Store) CreateToken(ctx context.Context, t Token) error {
 	if t.Scope == "" {
 		t.Scope = "translate"

@@ -81,6 +81,10 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request, path string) 
 		h.updateToken(w, r)
 	case path == "/tokens" && r.Method == http.MethodDelete:
 		h.deleteToken(w, r)
+	case path == "/tokens/reveal" && r.Method == http.MethodGet:
+		h.revealToken(w, r)
+	case path == "/tokens/toggle" && r.Method == http.MethodPost:
+		h.toggleToken(w, r)
 	case path == "/prompts" && r.Method == http.MethodGet:
 		prompts, err := h.store.ListPrompts(r.Context())
 		h.write(w, prompts, err)
@@ -319,6 +323,39 @@ func (h *Handler) testModel(w http.ResponseWriter, r *http.Request) {
 	} else {
 		h.write(w, map[string]interface{}{"success": true, "latency_ms": latency}, nil)
 	}
+}
+
+func (h *Handler) revealToken(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	tok, err := h.store.GetTokenByID(r.Context(), id)
+	if err != nil {
+		h.error(w, http.StatusNotFound, err)
+		return
+	}
+	h.write(w, map[string]interface{}{"id": tok.ID, "token": tok.Token}, nil)
+}
+
+func (h *Handler) toggleToken(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	tok, err := h.store.GetTokenByID(r.Context(), id)
+	if err != nil {
+		h.error(w, http.StatusNotFound, err)
+		return
+	}
+	tok.Enabled = !tok.Enabled
+	if err := h.store.UpdateToken(r.Context(), *tok); err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+	h.write(w, map[string]interface{}{"id": tok.ID, "enabled": tok.Enabled}, nil)
 }
 
 func (h *Handler) canDisableModel(w http.ResponseWriter, r *http.Request, provider, apiURL, name string) bool {
