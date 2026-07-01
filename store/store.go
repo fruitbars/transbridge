@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"transbridge/config"
@@ -132,7 +133,15 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("create sqlite directory: %w", err)
 		}
 	}
-	db, err := sql.Open("sqlite", path)
+	// DSN 参数让并发写者能排队等锁而不是立刻返回 SQLITE_BUSY：
+	//   _journal_mode=WAL  多并发写者共享 WAL 文件，读写不阻塞
+	//   _busy_timeout=5000 驱动内部自动重试最多 5 秒
+	//   _synchronous=NORMAL 配合 WAL 时安全且比 FULL 快很多
+	dsn := path
+	if !strings.Contains(dsn, "?") {
+		dsn += "?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL"
+	}
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
