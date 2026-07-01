@@ -55,7 +55,7 @@ admin:
 
 后续后台修改写入 SQLite。启动时如果 SQLite 已有 provider 或 active prompt，会优先使用 SQLite 数据。
 
-新增 SQLite 驱动 `modernc.org/sqlite v1.36.3`，源码编译最低 Go 版本为 1.23。
+新增 SQLite 驱动 `modernc.org/sqlite v1.36.3`，源码编译最低 Go 版本为 1.25。
 
 ## 后台入口
 
