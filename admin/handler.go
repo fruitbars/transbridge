@@ -70,6 +70,8 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request, path string) 
 		h.upsertModel(w, r)
 	case path == "/models" && r.Method == http.MethodDelete:
 		h.deleteModel(w, r)
+	case path == "/models/test" && r.Method == http.MethodPost:
+		h.testModel(w, r)
 	case path == "/tokens" && r.Method == http.MethodGet:
 		tokens, err := h.store.ListTokenViews(r.Context())
 		h.write(w, tokens, err)
@@ -271,6 +273,52 @@ func (h *Handler) canDeleteModel(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 	return true
+}
+
+func (h *Handler) testModel(w http.ResponseWriter, r *http.Request) {
+	if h.translation == nil {
+		h.errorText(w, http.StatusServiceUnavailable, "translation service not available")
+		return
+	}
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		h.errorText(w, http.StatusBadRequest, "id required")
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err)
+		return
+	}
+	models, err := h.store.ListModelViews(r.Context())
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+	var target *store.ModelView
+	for _, m := range models {
+		if m.ID == id {
+			target = &m
+			break
+		}
+	}
+	if target == nil {
+		h.errorText(w, http.StatusNotFound, "model not found")
+		return
+	}
+	promptTemplate, err := h.store.ActivePrompt(r.Context(), h.cfg.Prompt.Template)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err)
+		return
+	}
+	start := time.Now()
+	_, testErr := h.translation.Translate(r.Context(), target.Provider, target.Name, promptTemplate, "hi", "", "en")
+	latency := time.Since(start).Milliseconds()
+	if testErr != nil {
+		h.write(w, map[string]interface{}{"success": false, "latency_ms": latency, "error": testErr.Error()}, nil)
+	} else {
+		h.write(w, map[string]interface{}{"success": true, "latency_ms": latency}, nil)
+	}
 }
 
 func (h *Handler) canDisableModel(w http.ResponseWriter, r *http.Request, provider, apiURL, name string) bool {

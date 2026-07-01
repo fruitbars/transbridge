@@ -394,7 +394,11 @@ function renderModels(){
       '<td class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.api_url)+'">'+esc(r.api_url)+'</td>'+
       '<td>'+esc(r.max_tokens||'-')+'</td>'+
       '<td>'+esc(r.temperature ?? '-')+'</td>'+
-      '<td style="white-space:nowrap"><button class="btn ghost sm" data-act="edit-model" data-id="'+r.id+'">编辑</button> <button class="btn ghost sm" data-act="del-model" data-id="'+r.id+'">删除</button></td>'+
+      '<td style="white-space:nowrap">'+
+        '<button class="btn ghost sm" data-act="test-model" data-id="'+r.id+'">测试</button> '+
+        '<button class="btn ghost sm" data-act="edit-model" data-id="'+r.id+'">编辑</button> '+
+        '<button class="btn ghost sm" data-act="del-model" data-id="'+r.id+'">删除</button>'+
+      '</td>'+
     '</tr>').join('') + '</tbody></table></div>';
 }
 function editModelById(id){
@@ -402,11 +406,27 @@ function editModelById(id){
   if(!m){ toast('模型不存在，已自动刷新','warn'); loadModels(); return; }
   openModelDialog(m);
 }
+async function testModelById(id){
+  const m = state.data.models.find(x => x.id === id);
+  if(!m){ toast('模型不存在','warn'); return; }
+  toast('测试 '+m.provider+'/'+m.name+' 中…','info');
+  const t0 = performance.now();
+  try{
+    const res = await req('/models/test?id='+id, {method:'POST'});
+    const clientMs = Math.round(performance.now() - t0);
+    if(res.success){
+      toast(m.provider+'/'+m.name+' 连通正常 — 服务端 '+res.latency_ms+' ms，端到端 '+clientMs+' ms','success');
+    }else{
+      toast(m.provider+'/'+m.name+' 测试失败: '+(res.error||'未知错误'),'error');
+    }
+  }catch(e){ toast('测试请求失败: '+e.message,'error'); }
+}
 document.addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if(!btn) return;
   const id = Number(btn.dataset.id);
   switch(btn.dataset.act){
+    case 'test-model': testModelById(id); break;
     case 'edit-model': editModelById(id); break;
     case 'del-model': {
       const m = state.data.models.find(x => x.id === id);
