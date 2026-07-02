@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -222,11 +223,53 @@ func (h *Handler) upsertModel(w http.ResponseWriter, r *http.Request) {
 			QPM:           req.RateLimit.QPM,
 		},
 	}
+	// 保存前自动测试：用真实参数调一次上游，暴露参数配置问题（max_tokens 越界、temperature 非法等）
+	if err := h.testModelConfig(r.Context(), provider, model); err != nil {
+		h.errorText(w, http.StatusBadRequest, fmt.Sprintf("model test failed: %v", err))
+		return
+	}
 	if err := h.store.UpsertProviderModel(r.Context(), provider, model, req.Enabled); err != nil {
 		h.error(w, http.StatusInternalServerError, err)
 		return
 	}
 	h.reloadModels(w, r.Context())
+}
+
+// testModelConfig 用一段测试文本调用上游，验证参数合法性。
+// 测试文本稍长（~200 字符）以触发 max_tokens / context 限制。
+func (h *Handler) testModelConfig(ctx context.Context, provider config.ProviderConfig, model config.ModelConfig) error {
+	if h.modelManager == nil {
+		return fmt.Errorf("model manager not available")
+	}
+	timeout := provider.Timeout
+	if model.Timeout != nil && *model.Timeout > 0 {
+		timeout = *model.Timeout
+	}
+	if timeout <= 0 {
+		timeout = 60
+	}
+	// 临时构造一个 translator 实例（不走 rate limit，避免测试消耗配额）
+	t := translator.NewOpenAITranslator(
+		provider.Provider,
+		provider.APIURL,
+		provider.APIKey,
+		model.Name,
+		timeout,
+		model.MaxTokens,
+		model.Temperature,
+	)
+	promptTemplate, err := h.store.ActivePrompt(ctx, h.cfg.Prompt.Template)
+	if err != nil {
+		promptTemplate = h.cfg.Prompt.Template
+	}
+	testText := "This is a test sentence to verify model configuration parameters such as max_tokens, temperature, and API connectivity. The test uses a moderately long input to ensure that token limits and response generation work correctly with the specified settings."
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	_, err = t.Translate(ctx, promptTemplate, testText, "en", "zh")
+	if err != nil {
+		return fmt.Errorf("upstream test call failed: %w", err)
+	}
+	return nil
 }
 
 func (h *Handler) deleteModel(w http.ResponseWriter, r *http.Request) {
