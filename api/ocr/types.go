@@ -13,6 +13,7 @@ const (
 	ElementFigureCaption ElementType = "figure_caption" // 图题
 	ElementHeader        ElementType = "header"         // 页眉
 	ElementFooter        ElementType = "footer"         // 页脚
+	ElementFootnote      ElementType = "footnote"       // 脚注
 	ElementReference     ElementType = "reference"      // 参考文献条目
 	ElementFigure        ElementType = "figure"         // 图（一般无文本，跳过）
 	ElementEquation      ElementType = "equation"       // 数学公式

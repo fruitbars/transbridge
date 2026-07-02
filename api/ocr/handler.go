@@ -24,7 +24,8 @@ type TranslatorFn interface {
 // Handler 处理 /ocr/translate 请求。逐元素按类型 + content_format 分发：
 //
 //   type=header|footer|figure|equation                → skip
-//   type=reference                                    → skip
+//   type=reference                                    → 提取引号内文章标题翻译
+//   type=footnote|text|title|list                     → 走 policy → cache → model
 //   type=figure_caption|table_caption                 → 保留前置编号（"Figure 2." / "表 3"），只翻后半
 //   type=table && content_format=html                 → 拆 <td>/<th>，逐格走 policy → 翻译 → 回填
 //   type=table && content_format=markdown             → 透传 markdown 内容，prompt 追加保留 markdown 语法
