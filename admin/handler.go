@@ -98,9 +98,47 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request, path string) 
 	case path == "/prompts/activate" && r.Method == http.MethodPost:
 		h.activatePrompt(w, r)
 	case path == "/logs" && r.Method == http.MethodGet:
-		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		logs, err := h.store.ListRequestLogs(r.Context(), limit)
-		h.write(w, logs, err)
+		// 支持筛选和分页：?q=xxx&provider=xxx&model=xxx&success=1&cache_hit=0&limit=100&offset=0
+		filter := store.LogFilter{
+			Q:        r.URL.Query().Get("q"),
+			Provider: r.URL.Query().Get("provider"),
+			Model:    r.URL.Query().Get("model"),
+			Endpoint: r.URL.Query().Get("endpoint"),
+			Limit:    100,
+			Offset:   0,
+		}
+		if lim := r.URL.Query().Get("limit"); lim != "" {
+			if v, err := strconv.Atoi(lim); err == nil {
+				filter.Limit = v
+			}
+		}
+		if off := r.URL.Query().Get("offset"); off != "" {
+			if v, err := strconv.Atoi(off); err == nil {
+				filter.Offset = v
+			}
+		}
+		if s := r.URL.Query().Get("success"); s != "" {
+			if v, err := strconv.ParseBool(s); err == nil {
+				filter.Success = &v
+			}
+		}
+		if c := r.URL.Query().Get("cache_hit"); c != "" {
+			if v, err := strconv.ParseBool(c); err == nil {
+				filter.CacheHit = &v
+			}
+		}
+		logs, total, err := h.store.QueryRequestLogs(r.Context(), filter)
+		h.write(w, map[string]interface{}{"logs": logs, "total": total}, err)
+	case path == "/log-filters" && r.Method == http.MethodGet:
+		// 返回各列的 distinct 值供筛选下拉框
+		providers, _ := h.store.DistinctLogValues(r.Context(), "provider")
+		models, _ := h.store.DistinctLogValues(r.Context(), "model")
+		endpoints, _ := h.store.DistinctLogValues(r.Context(), "endpoint")
+		h.write(w, map[string]interface{}{
+			"providers": providers,
+			"models":    models,
+			"endpoints": endpoints,
+		}, nil)
 	case path == "/translate" && r.Method == http.MethodPost:
 		h.tryTranslate(w, r)
 	default:

@@ -711,28 +711,119 @@ func (s *Store) LogRequest(ctx context.Context, r RequestLog) error {
 }
 
 func (s *Store) ListRequestLogs(ctx context.Context, limit int) ([]RequestLog, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 100
+	logs, _, err := s.QueryRequestLogs(ctx, LogFilter{Limit: limit})
+	return logs, err
+}
+
+// LogFilter 请求日志的筛选条件。
+type LogFilter struct {
+	Q        string // 关键词（LIKE 匹配 source_text / target_text / error / provider / model / endpoint）
+	Provider string // 精确匹配
+	Model    string // 精确匹配
+	Endpoint string // 精确匹配
+	Success  *bool  // nil = 不筛
+	CacheHit *bool  // nil = 不筛
+	Limit    int    // 每页，默认 100，最大 10000
+	Offset   int    // 分页偏移
+}
+
+// QueryRequestLogs 支持筛选和分页的日志查询。同时返回符合筛选的总数。
+func (s *Store) QueryRequestLogs(ctx context.Context, f LogFilter) ([]RequestLog, int64, error) {
+	if f.Limit <= 0 {
+		f.Limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, timestamp, endpoint, source_lang, target_lang, provider, model, api_url, cache_hit, success, error, process_time_ms, source_chars, target_chars, source_text, target_text FROM request_logs ORDER BY id DESC LIMIT ?`, limit)
+	if f.Limit > 10000 {
+		f.Limit = 10000
+	}
+	if f.Offset < 0 {
+		f.Offset = 0
+	}
+
+	var conds []string
+	var args []interface{}
+	if f.Q != "" {
+		conds = append(conds, "(source_text LIKE ? OR target_text LIKE ? OR error LIKE ? OR provider LIKE ? OR model LIKE ? OR endpoint LIKE ?)")
+		like := "%" + f.Q + "%"
+		args = append(args, like, like, like, like, like, like)
+	}
+	if f.Provider != "" {
+		conds = append(conds, "provider = ?")
+		args = append(args, f.Provider)
+	}
+	if f.Model != "" {
+		conds = append(conds, "model = ?")
+		args = append(args, f.Model)
+	}
+	if f.Endpoint != "" {
+		conds = append(conds, "endpoint = ?")
+		args = append(args, f.Endpoint)
+	}
+	if f.Success != nil {
+		conds = append(conds, "success = ?")
+		args = append(args, boolInt(*f.Success))
+	}
+	if f.CacheHit != nil {
+		conds = append(conds, "cache_hit = ?")
+		args = append(args, boolInt(*f.CacheHit))
+	}
+
+	whereClause := ""
+	if len(conds) > 0 {
+		whereClause = " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	// 先查总数
+	var total int64
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM request_logs"+whereClause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// 再查分页数据
+	queryArgs := append([]interface{}{}, args...)
+	queryArgs = append(queryArgs, f.Limit, f.Offset)
+	query := `SELECT id, timestamp, endpoint, source_lang, target_lang, provider, model, api_url, cache_hit, success, error, process_time_ms, source_chars, target_chars, source_text, target_text FROM request_logs` + whereClause + ` ORDER BY id DESC LIMIT ? OFFSET ?`
+	rows, err := s.db.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
-	logs := make([]RequestLog, 0)
+	logs := make([]RequestLog, 0, f.Limit)
 	for rows.Next() {
 		var r RequestLog
 		var ts string
 		var cacheHit, success int
 		if err := rows.Scan(&r.ID, &ts, &r.Endpoint, &r.SourceLang, &r.TargetLang, &r.Provider, &r.Model, &r.APIURL, &cacheHit, &success, &r.Error, &r.ProcessTimeMS, &r.SourceChars, &r.TargetChars, &r.SourceText, &r.TargetText); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		r.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)
 		r.CacheHit = cacheHit == 1
 		r.Success = success == 1
 		logs = append(logs, r)
 	}
-	return logs, rows.Err()
+	return logs, total, rows.Err()
+}
+
+// DistinctLogValues 返回某列的 distinct 值列表，供前端筛选下拉框使用。
+// col 必须是白名单列，防注入。
+func (s *Store) DistinctLogValues(ctx context.Context, col string) ([]string, error) {
+	allowed := map[string]bool{"provider": true, "model": true, "endpoint": true}
+	if !allowed[col] {
+		return nil, fmt.Errorf("column not allowed: %s", col)
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT DISTINCT "+col+" FROM request_logs WHERE "+col+" != '' ORDER BY "+col)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := []string{}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		values = append(values, v)
+	}
+	return values, rows.Err()
 }
 
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
