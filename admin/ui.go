@@ -19,8 +19,13 @@ const indexHTML = `<!doctype html>
   a{color:var(--primary);text-decoration:none}
   /* 布局 */
   .app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
-  aside{background:var(--sidebar);color:var(--sidebar-text);padding:20px 0;display:flex;flex-direction:column}
-  aside .brand{padding:0 20px 20px;font-size:16px;font-weight:600;color:#fff;display:flex;align-items:center;gap:8px;border-bottom:1px solid #1e293b;margin-bottom:12px}
+  aside{background:var(--sidebar);color:var(--sidebar-text);padding:20px 0;display:flex;flex-direction:column;transition:width 0.2s ease}
+  aside.collapsed{width:60px}
+  aside.collapsed .brand{font-size:0;padding-bottom:12px}
+  aside.collapsed nav a{justify-content:center;padding:10px}
+  aside.collapsed nav a span{display:none}
+  aside.collapsed .foot{font-size:0}
+  aside .brand{padding:0 20px 20px;font-size:16px;font-weight:600;color:#fff;display:flex;align-items:center;gap:8px;border-bottom:1px solid #1e293b;margin-bottom:12px;justify-content:space-between}
   aside nav a{display:flex;align-items:center;gap:10px;padding:10px 20px;color:var(--sidebar-text);cursor:pointer;border-left:3px solid transparent}
   aside nav a:hover{background:var(--sidebar-hover);color:#fff}
   aside nav a.active{background:var(--sidebar-active);color:#fff;border-left-color:var(--primary)}
@@ -122,8 +127,11 @@ const indexHTML = `<!doctype html>
 </head>
 <body>
 <div class="app">
-  <aside>
-    <div class="brand">TransBridge</div>
+  <aside id="sidebar">
+    <div class="brand">
+      <span>TransBridge</span>
+      <button class="btn ghost sm" id="sidebar-toggle" onclick="toggleSidebar()" style="padding:2px 6px;font-size:14px" title="折叠侧边栏">‹</button>
+    </div>
     <nav id="nav">
       <a data-view="dashboard">仪表盘</a>
       <a data-view="models">模型 <span class="badge" id="nav-models">·</span></a>
@@ -310,6 +318,12 @@ const state = {
 const titles = { dashboard:'仪表盘', models:'模型管理', tokens:'Token 管理', prompts:'Prompt 版本', translate:'在线试译', logs:'历史日志' };
 
 // 导航
+function toggleSidebar(){
+  const sidebar = $('sidebar');
+  const isCollapsed = sidebar.classList.toggle('collapsed');
+  $('sidebar-toggle').textContent = isCollapsed ? '›' : '‹';
+  localStorage.setItem('sidebar_collapsed', isCollapsed ? '1' : '0');
+}
 function go(view){
   state.view = view;
   document.querySelectorAll('aside nav a').forEach(a => a.classList.toggle('active', a.dataset.view===view));
