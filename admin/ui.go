@@ -399,12 +399,16 @@ function renderLiveMetrics(models){
   });
   if(active.length === 0){ host.innerHTML = emptyState('已配置的模型都没有开启限流'); return; }
   host.innerHTML = '<div class="tbl-wrap"><table><thead><tr>'+
-    '<th>模型</th><th>并发</th><th>QPS（近 1s）</th><th>QPM（近 60s）</th><th>排队中</th>'+
+    '<th>模型</th><th>熔断</th><th>并发</th><th>QPS（近 1s）</th><th>QPM（近 60s）</th><th>排队中</th>'+
     '</tr></thead><tbody>' +
     active.map(k => {
       const s = models[k];
+      const circuitBadge = s.circuit_open
+        ? '<span class="badge" style="background:var(--danger);color:#fff;padding:2px 8px">OPEN</span> <span class="muted" style="font-size:11px" title="'+esc(s.circuit_open_until||'')+'">失败 '+s.circuit_fails+' 次</span>'
+        : '<span class="badge" style="background:var(--success);color:#fff;padding:2px 8px">OK</span>';
       return '<tr>'+
         '<td><code>'+esc(k)+'</code></td>'+
+        '<td>'+circuitBadge+'</td>'+
         '<td>'+pctBar(s.in_flight, s.max_concurrent)+'</td>'+
         '<td>'+pctBar(s.qps_used, s.qps_limit)+'</td>'+
         '<td>'+pctBar(s.qpm_used, s.qpm_limit)+'</td>'+

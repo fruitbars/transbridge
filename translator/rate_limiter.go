@@ -13,13 +13,16 @@ import (
 // LimiterStats 描述某个 model 当前的限流状态。
 // 上游模型的并发和 QPS/QPM 各自独立，都需要观察是否接近上限。
 type LimiterStats struct {
-	MaxConcurrent int `json:"max_concurrent"`
-	InFlight      int `json:"in_flight"` // 当前有多少个请求正占着 semaphore
-	Waiting       int `json:"waiting"`   // 当前有多少 goroutine 正等着 semaphore/rate（近似值）
-	QPSLimit      int `json:"qps_limit"`
-	QPSUsed       int `json:"qps_used"` // 最近 1s 内已消费的请求数
-	QPMLimit      int `json:"qpm_limit"`
-	QPMUsed       int `json:"qpm_used"` // 最近 60s 内已消费的请求数
+	MaxConcurrent      int    `json:"max_concurrent"`
+	InFlight           int    `json:"in_flight"` // 当前有多少个请求正占着 semaphore
+	Waiting            int    `json:"waiting"`   // 当前有多少 goroutine 正等着 semaphore/rate（近似值）
+	QPSLimit           int    `json:"qps_limit"`
+	QPSUsed            int    `json:"qps_used"` // 最近 1s 内已消费的请求数
+	QPMLimit           int    `json:"qpm_limit"`
+	QPMUsed            int    `json:"qpm_used"` // 最近 60s 内已消费的请求数
+	CircuitOpen        bool   `json:"circuit_open"`
+	CircuitFails       int    `json:"circuit_fails"`        // 连续失败次数
+	CircuitOpenUntil   string `json:"circuit_open_until"`   // 熔断解除时间（RFC3339，空 = 未熔断）
 }
 
 type rateLimitedTranslator struct {

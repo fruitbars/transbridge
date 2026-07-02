@@ -79,6 +79,8 @@ func NewModelManager(providers []config.ProviderConfig) (*ModelManager, error) {
 			default:
 				return nil, fmt.Errorf("unsupported provider: %s", provider.Provider)
 			}
+			// 先加熔断保护，再加限流（熔断在内层，限流在外层）
+			translator = newCircuitBreakerTranslator(translator, 5, 30*time.Second)
 			translator = newRateLimitedTranslator(translator, mergeRateLimit(provider.RateLimit, modelCfg.RateLimit))
 
 			mm.translators[identifier] = translator
@@ -227,13 +229,26 @@ func (mm *ModelManager) AllStats() map[string]LimiterStats {
 	result := make(map[string]LimiterStats, len(mm.translators))
 	for id, t := range mm.translators {
 		key := id.Provider + "/" + id.Model
+		stats := LimiterStats{}
 		// 如果这个 translator 是 rateLimitedTranslator，才有 Stats
 		if rlt, ok := t.(*rateLimitedTranslator); ok {
-			result[key] = rlt.Stats()
-		} else {
-			// 没限流配置时返回零值
-			result[key] = LimiterStats{}
+			stats = rlt.Stats()
 		}
+		// 如果外层是 rateLimitedTranslator，内层可能是 circuitBreakerTranslator
+		// 需要递归拿到 circuit state
+		inner := t
+		if rlt, ok := t.(*rateLimitedTranslator); ok {
+			inner = rlt.inner
+		}
+		if cbt, ok := inner.(*circuitBreakerTranslator); ok {
+			isOpen, fails, openUntil := cbt.CircuitState()
+			stats.CircuitOpen = isOpen
+			stats.CircuitFails = fails
+			if isOpen {
+				stats.CircuitOpenUntil = openUntil.Format(time.RFC3339)
+			}
+		}
+		result[key] = stats
 	}
 	return result
 }
