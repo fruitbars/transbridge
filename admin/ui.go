@@ -85,6 +85,13 @@ const indexHTML = `<!doctype html>
   .dot.off{background:#94a3b8}
   .dot.err{background:var(--danger);box-shadow:0 0 0 2px rgba(220,38,38,.15)}
   .dot.warn{background:var(--warn)}
+  .pager{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-top:1px solid var(--border);font-size:14px}
+  .pager .pages{display:flex;gap:6px}
+  .pager .pages button{padding:6px 12px;border:1px solid var(--border);background:#fff;cursor:pointer;border-radius:4px}
+  .pager .pages button:hover:not(:disabled){background:#f8fafc}
+  .pager .pages button:disabled{opacity:0.4;cursor:not-allowed}
+  .pager .pages button.cur{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .pager .pages span{padding:6px;color:var(--muted)}
   .brand-pill{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:500;background:#f1f5f9;color:var(--text);border:1px solid var(--border)}
   /* 指标卡 */
   .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
@@ -241,8 +248,11 @@ const indexHTML = `<!doctype html>
           <div class="card-h">
             <h2>历史日志</h2>
             <div class="toolbar">
-              <div class="search"><input id="s-logs" placeholder="搜索端点 / 模型 / 语言 / 错误" oninput="renderLogs()"></div>
-              <select id="l-limit" onchange="loadLogs()" class="ghost"><option value="100">100 条</option><option value="500">500 条</option><option value="1000">1000 条</option></select>
+              <div class="search"><input id="s-logs" placeholder="搜索输入/输出/错误" oninput="applyLogFilters()" style="width:220px"></div>
+              <select id="f-provider" onchange="applyLogFilters()" style="min-width:100px"><option value="">全部 Provider</option></select>
+              <select id="f-model" onchange="applyLogFilters()" style="min-width:120px"><option value="">全部模型</option></select>
+              <select id="f-success" onchange="applyLogFilters()"><option value="">成功/失败</option><option value="1">仅成功</option><option value="0">仅失败</option></select>
+              <select id="f-limit" onchange="applyLogFilters()"><option value="50">50/页</option><option value="100" selected>100/页</option><option value="500">500/页</option><option value="1000">1000/页</option></select>
             </div>
           </div>
           <div class="card-b flush"><div id="t-logs"></div></div>
@@ -836,30 +846,56 @@ async function tryTranslate(){
 }
 
 // 日志
+state.logFilters = { q:'', provider:'', model:'', success:'', limit:100, offset:0 };
+state.logTotal = 0;
+
+async function loadLogFilters(){
+  try{
+    const data = await req('/log-filters');
+    const fp = $('f-provider'), fm = $('f-model');
+    fp.innerHTML = '<option value="">全部 Provider</option>' + (data.providers||[]).map(p => '<option value="'+esc(p)+'">'+esc(p)+'</option>').join('');
+    fm.innerHTML = '<option value="">全部模型</option>' + (data.models||[]).map(m => '<option value="'+esc(m)+'">'+esc(m)+'</option>').join('');
+  }catch(e){ /* 无筛选选项也能用 */ }
+}
 async function loadLogs(){
-  const lim = $('l-limit')?.value || 100;
-  state.data.logs = asArray(await req('/logs?limit='+lim));
-  state.page.logs = 1;
-  renderLogs();
+  await loadLogFilters();
+  applyLogFilters();
+}
+async function applyLogFilters(){
+  const f = state.logFilters;
+  f.q = $('s-logs')?.value || '';
+  f.provider = $('f-provider')?.value || '';
+  f.model = $('f-model')?.value || '';
+  f.success = $('f-success')?.value || '';
+  f.limit = parseInt($('f-limit')?.value || 100);
+  f.offset = 0;
+  await fetchLogs();
+}
+async function fetchLogs(){
+  const f = state.logFilters;
+  const params = new URLSearchParams({ limit: f.limit, offset: f.offset });
+  if(f.q) params.set('q', f.q);
+  if(f.provider) params.set('provider', f.provider);
+  if(f.model) params.set('model', f.model);
+  if(f.success) params.set('success', f.success);
+  try{
+    const data = await req('/logs?'+params);
+    state.data.logs = asArray(data.logs);
+    state.logTotal = data.total || 0;
+    renderLogs();
+  }catch(e){ toast('加载日志失败: '+e.message,'error'); }
 }
 function renderLogs(){
-  const q = ($('s-logs')?.value || '').toLowerCase();
-  const filtered = state.data.logs.filter(r =>
-    !q || ((r.endpoint||'')+' '+r.provider+' '+r.model+' '+(r.source_lang||'')+' '+(r.target_lang||'')+' '+(r.error||'')).toLowerCase().includes(q)
-  );
-  const sorted = sortRows(filtered, 'logs');
-  const total = sorted.length;
-  const sz = state.pageSize;
-  const totalPages = Math.max(1, Math.ceil(total / sz));
-  if(state.page.logs > totalPages) state.page.logs = totalPages;
-  const start = (state.page.logs-1)*sz;
-  const rows = sorted.slice(start, start+sz);
+  const logs = state.data.logs;
+  const total = state.logTotal;
+  const lim = state.logFilters.limit;
+  const off = state.logFilters.offset;
   const host = $('t-logs');
-  if(total === 0){ host.innerHTML = emptyState(q?'没有匹配的日志':'尚无日志'); return; }
+  if(total === 0){ host.innerHTML = emptyState('暂无日志'); return; }
   let html = '<div class="tbl-wrap"><table><thead><tr>'+
-    thSort('logs','timestamp','时间') + '<th>端点</th><th>模型</th><th>语言</th>' + thSort('logs','process_time_ms','耗时') + '<th>字符</th><th>输入</th><th>输出</th><th>结果</th>'+
+    '<th>时间</th><th>端点</th><th>模型</th><th>语言</th><th>耗时</th><th>字符</th><th>输入</th><th>输出</th><th>结果</th>'+
     '</tr></thead><tbody>' +
-    rows.map((r, i) => '<tr>'+
+    logs.map(r => '<tr>'+
       '<td title="'+esc(r.timestamp)+'">'+esc(relTime(r.timestamp))+'</td>'+
       '<td class="muted"><code>'+esc(r.endpoint||'-')+'</code></td>'+
       '<td>'+brandPill(r.provider)+' <code>'+esc(r.model)+'</code></td>'+
@@ -870,20 +906,13 @@ function renderLogs(){
       '<td>'+logCellPreview(r.target_text, r.id, 'out')+'</td>'+
       '<td>'+dot(r.success)+' '+(r.cache_hit?'<span class="pill">缓存</span>':'')+(r.error?' <button class="btn ghost sm" data-act="show-log-error" data-id="'+r.id+'">错误</button>':'')+'</td>'+
     '</tr>').join('') + '</tbody></table></div>';
+  const curPage = Math.floor(off / lim) + 1;
+  const totalPages = Math.ceil(total / lim);
   if(totalPages > 1){
-    const cur = state.page.logs;
-    const pages = [];
-    for(let i=1;i<=totalPages;i++){
-      if(i===1 || i===totalPages || Math.abs(i-cur)<=1){
-        pages.push('<button class="'+(i===cur?'cur':'')+'" onclick="state.page.logs='+i+';renderLogs()">'+i+'</button>');
-      } else if(pages[pages.length-1] !== '<span>…</span>'){
-        pages.push('<span>…</span>');
-      }
-    }
-    html += '<div class="pager"><div>共 '+total+' 条，第 '+cur+' / '+totalPages+' 页</div><div class="pages">'+
-      '<button onclick="state.page.logs=Math.max(1,state.page.logs-1);renderLogs()" '+(cur===1?'disabled':'')+'>‹</button>'+
-      pages.join('')+
-      '<button onclick="state.page.logs=Math.min('+totalPages+',state.page.logs+1);renderLogs()" '+(cur===totalPages?'disabled':'')+'>›</button>'+
+    const gotoPage = (p) => { state.logFilters.offset = (p-1)*lim; fetchLogs(); };
+    html += '<div class="pager"><div>共 '+total+' 条，第 '+curPage+' / '+totalPages+' 页</div><div class="pages">'+
+      '<button onclick="state.logFilters.offset=Math.max(0,state.logFilters.offset-state.logFilters.limit);fetchLogs()" '+(curPage===1?'disabled':'')+'>‹ 上一页</button>'+
+      '<button onclick="state.logFilters.offset=Math.min('+(total-lim)+',state.logFilters.offset+state.logFilters.limit);fetchLogs()" '+(curPage===totalPages?'disabled':'')+'>下一页 ›</button>'+
     '</div></div>';
   }
   host.innerHTML = html;
