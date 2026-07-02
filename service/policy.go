@@ -41,6 +41,9 @@ var (
 	dateMoneyPattern       = regexp.MustCompile(`(?i)^\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|Q[1-4]|FY\d{2,4}|[$€¥£]\s*[\d,.]+|[A-Z]{3}\s+[\d,.]+)\s*$`)
 	romanPattern           = regexp.MustCompile(`^\s*[IVXLCDM]+\s*$`)
 	acronymPattern         = regexp.MustCompile(`^\s*[A-Z]{2,5}\s*$`)
+	latexFormulaPattern    = regexp.MustCompile(`^\s*\$[^$]+\$\s*$`)
+	parenLabelPattern      = regexp.MustCompile(`^\s*[(（\[【][\w一-鿿]{1,3}[)）\]】]\s*$`)
+	citationInTextPattern  = regexp.MustCompile(`^\s*[A-Za-z0-9\s,&]+\s*\[\d+([,\-–\s]*\d+)*\]\s*$`)
 	singleASCIIWordPattern = regexp.MustCompile(`^[A-Za-z]+$`)
 )
 
@@ -63,6 +66,9 @@ var zhCommonTerms = map[string]string{
 	"description": "描述", "high": "高", "medium": "中", "low": "低",
 	"control": "对照", "treatment": "处理", "case": "病例", "normal": "正常",
 	"yes": "是", "no": "否", "group": "组", "area": "面积", "year": "年份",
+	// 常见双字符
+	"hi": "你好", "ok": "好", "id": "ID", "us": "美国", "uk": "英国",
+	"是": "是", "否": "否", "等": "等", "或": "或", "和": "和",
 }
 
 func applyTranslationPolicy(text, targetLang string) translationPolicyResult {
@@ -89,6 +95,20 @@ func applyTranslationPolicyWithMode(text, targetLang string, mode translationPol
 func shouldSkipTranslationText(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	lower := strings.ToLower(trimmed)
+
+	// LaTeX 公式 $ ... $
+	if latexFormulaPattern.MatchString(trimmed) {
+		return true
+	}
+	// 括号标记 (A) (1) （甲）
+	if parenLabelPattern.MatchString(trimmed) {
+		return true
+	}
+	// 带引用编号的短语 MoE [32]
+	if citationInTextPattern.MatchString(trimmed) {
+		return true
+	}
+
 	if citationPattern.MatchString(trimmed) ||
 		numericPattern.MatchString(trimmed) ||
 		urlPattern.MatchString(trimmed) ||
@@ -105,6 +125,7 @@ func shouldSkipTranslationText(text string) bool {
 	if skipUnits[lower] || missingValueTokens[lower] {
 		return true
 	}
+	// 单字符一律 skip
 	if utf8.RuneCountInString(trimmed) == 1 {
 		return true
 	}
